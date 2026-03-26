@@ -1860,15 +1860,16 @@ function startGameForTeam(rk) {
   startLeaderboardRefresh();
 
   // Resume any active penalty from before a reload
+  // Uses penaltySecsRemaining (a static count) so time spent logging in doesn't consume penalty time
   const team = STATE.teams[STATE.currentTeam];
-  if (team && team.penaltyUntil) {
-    const secsLeft = Math.ceil((team.penaltyUntil - Date.now()) / 1000);
+  if (team && team.penaltySecsRemaining) {
+    const secsLeft = team.penaltySecsRemaining;
     if (secsLeft > 0) {
       startPenalty(secsLeft);
     } else {
       // Penalty already expired — clean it up
       if (db && STATE.currentTeam) {
-        db.ref('gameState/teams/' + STATE.currentTeam + '/penaltyUntil').remove();
+        db.ref('gameState/teams/' + STATE.currentTeam + '/penaltySecsRemaining').remove();
       }
     }
   }
@@ -2314,10 +2315,9 @@ function setupAntiCheat() {
 function startPenalty(secondsOverride) {
   const remaining_init = secondsOverride ?? TAB_PENALTY_SECS;
 
-  // Save penalty end time to Firebase so it survives a page reload
-  const penaltyUntil = Date.now() + remaining_init * 1000;
+  // Save remaining seconds to Firebase so penalty pauses while the team is away/logging in
   if (db && STATE.currentTeam) {
-    db.ref('gameState/teams/' + STATE.currentTeam + '/penaltyUntil').set(penaltyUntil);
+    db.ref('gameState/teams/' + STATE.currentTeam + '/penaltySecsRemaining').set(remaining_init);
   }
 
   // Lock the answer input
@@ -2347,7 +2347,7 @@ function startPenalty(secondsOverride) {
       penaltyInterval = null;
       // Clear penalty from Firebase
       if (db && STATE.currentTeam) {
-        db.ref('gameState/teams/' + STATE.currentTeam + '/penaltyUntil').remove();
+        db.ref('gameState/teams/' + STATE.currentTeam + '/penaltySecsRemaining').remove();
       }
       // Unlock input
       if (input) input.disabled = false;
