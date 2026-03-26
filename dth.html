@@ -1270,7 +1270,9 @@ function projectTeamsForParticipant(allTeams, currentTeam) {
 
 function sanitizeRoundProgressForWrite(existingRound, incomingRound) {
   if (!incomingRound) return existingRound;
-  if (!existingRound) return incomingRound;
+  // If the server has no round record (e.g. after a reset), never let a team
+  // write their stale in-flight data back — that would undo the reset.
+  if (!existingRound) return existingRound;
 
   const total = Array.isArray(existingRound.questions) ? existingRound.questions.length : 0;
   const oldQ = Number(existingRound.currentQ || 0);
@@ -1472,9 +1474,28 @@ function doLogin() {
     if (user === ADMIN_USER && pass === getAdminPassword()) {
       STATE.isAdmin = true;
       STATE.currentTeam = null;
-      showScreen('admin');
-      refreshAdminUI();
-      startLeaderboardRefresh();
+      // Always fetch fresh state from Firebase so the admin sees the real
+      // current data, not stale in-memory state from a previous session.
+      const doEnterAdmin = () => { showScreen('admin'); refreshAdminUI(); startLeaderboardRefresh(); };
+      if (db) {
+        db.ref('gameState').once('value', snapshot => {
+          const data = snapshot.val() ?? {};
+          STATE.teams      = data.teams      ?? {};
+          STATE.phase      = data.phase      ?? 'pre';
+          STATE.roundStart = data.roundStart ?? null;
+          STATE.roundEnd   = data.roundEnd   ?? null;
+          const qb = data.qBanks ?? {};
+          STATE.qBanks = {
+            r1: Array.isArray(qb.r1) ? qb.r1 : STATE.qBanks.r1,
+            r2: Array.isArray(qb.r2) ? qb.r2 : STATE.qBanks.r2,
+            tb: Array.isArray(qb.tb) ? qb.tb : STATE.qBanks.tb,
+          };
+          STATE.eventName = data.eventName ?? STATE.eventName;
+          doEnterAdmin();
+        }).catch(() => doEnterAdmin()); // fall back to in-memory on error
+      } else {
+        doEnterAdmin();
+      }
     } else {
       err.style.display = 'block';
       err.textContent = 'Invalid admin credentials.';
