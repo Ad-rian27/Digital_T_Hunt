@@ -1394,14 +1394,25 @@ function setupRealtimeSync() {
     STATE.roundEnd   = data.roundEnd   ?? null;
     const teamsData = data.teams ?? {};
 
-    // Capture our team's local currentQ values BEFORE Firebase overwrites STATE.teams.
-    // This guards against stale syncs (triggered by other clients while our own
-    // saveTeamProgress transaction is still in-flight) rolling back our progress.
-    const localQSnapshot = {};
+    // For team participants we project Firebase data through scrubRoundForParticipant
+    // to strip answers from other teams — but we must NOT replace our own round
+    // objects wholesale, because in-flight mutations (currentQ increment, wrongStreak,
+    // hintShown changes made synchronously in submitAnswer but not yet written to
+    // Firebase) will be silently discarded, breaking question advancement.
+    //
+    // Strategy:
+    //   1. Snapshot every live field of our current round objects.
+    //   2. Let projectTeamsForParticipant overwrite STATE.teams (so other teams
+    //      and phase-gating work correctly).
+    //   3. Restore our own round objects from the snapshot, but detect if Firebase
+    //      legitimately advanced currentQ (admin unlock) and honour that instead.
+
+    // Step 1 — snapshot all in-flight round state for our team.
+    const localRoundSnapshot = {};
     if (!STATE.isAdmin && STATE.currentTeam) {
       ['r1','r2','tb'].forEach(rk => {
         const rd = STATE.teams[STATE.currentTeam]?.[rk];
-        if (rd) localQSnapshot[rk] = rd.currentQ;
+        if (rd) localRoundSnapshot[rk] = { ...rd }; // shallow copy is enough (primitives only)
       });
     }
 
@@ -1409,19 +1420,25 @@ function setupRealtimeSync() {
       ? teamsData
       : projectTeamsForParticipant(teamsData, STATE.currentTeam);
 
-    // After overwriting, ensure Firebase stale data never rolls back local progress.
-    // Also detect if Firebase advanced our question (admin unlock) — re-render if so.
+    // Step 2 — restore our own round state so in-flight mutations survive the overwrite.
     let fbAdvancedQ = false;
     if (!STATE.isAdmin && STATE.currentTeam && STATE.teams[STATE.currentTeam]) {
       ['r1','r2','tb'].forEach(rk => {
-        const rd = STATE.teams[STATE.currentTeam][rk];
-        if (!rd) return;
-        const localQ = localQSnapshot[rk];
-        if (localQ === undefined) return;
-        if (rd.currentQ > localQ) {
-          fbAdvancedQ = true; // admin unlocked or another device advanced us
-        } else if (rd.currentQ < localQ) {
-          rd.currentQ = localQ; // stale sync — keep our in-flight value
+        const snap = localRoundSnapshot[rk];
+        const fbRd = STATE.teams[STATE.currentTeam][rk];
+        if (!snap) return; // we had no local state — keep whatever Firebase gave us
+        if (!fbRd) {
+          // Firebase wiped the round (e.g. after a reset) — don't restore
+          return;
+        }
+        if (fbRd.currentQ > snap.currentQ) {
+          // Firebase is legitimately ahead (admin unlock or second device) — honour it
+          fbAdvancedQ = true;
+          // Preserve questions from the cached array, update other fields from Firebase
+          STATE.teams[STATE.currentTeam][rk] = { ...snap, currentQ: fbRd.currentQ };
+        } else {
+          // Firebase is stale or equal — keep our full in-flight snapshot
+          STATE.teams[STATE.currentTeam][rk] = snap;
         }
       });
     }
