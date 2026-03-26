@@ -851,8 +851,8 @@
 
 <!-- TAB WARNING OVERLAY -->
 <div id="tab-warning">
-  <div class="tab-warn-title">⚠ VIOLATION DETECTED</div>
-  <div class="tab-warn-msg">Tab switching is not allowed during the quiz. Your attempt has been flagged.</div>
+  <div class="tab-warn-title" id="tab-warn-title">⚠ VIOLATION DETECTED</div>
+  <div class="tab-warn-msg" id="tab-warn-msg">Tab switching is not allowed during the quiz. Your attempt has been flagged.</div>
   <div id="tab-penalty-msg" style="font-family:'Orbitron',monospace;font-size:1.1rem;color:var(--danger);margin:8px 0;"></div>
   <button class="btn danger" id="tab-dismiss-btn" onclick="dismissTabWarning()" style="display:none;">RETURN TO QUIZ</button>
 </div>
@@ -951,7 +951,6 @@
           <button class="btn success" onclick="submitAnswer()">SUBMIT ANSWER</button>
           <button class="btn orange" id="skip-btn" onclick="skipQuestion()" style="font-size:0.7rem;">CHANGE QUESTION (0/3 used)</button>
         </div>
-        <div id="skip-penalty-display" style="display:none;margin-top:8px;font-family:'Orbitron',monospace;font-size:0.72rem;color:var(--danger);"></div>
       </div>
     </div>
 
@@ -1903,9 +1902,6 @@ function startGameForTeam(rk) {
   renderQuestion();
   updateTimerDisplay();
   startLeaderboardRefresh();
-  // Show skip penalty if any was accumulated before a reload
-  const teamForSkip = STATE.teams[STATE.currentTeam];
-  if (teamForSkip) updateSkipPenaltyDisplay(teamForSkip[rk]);
 
   // Resume any active penalty from before a reload
   // Uses penaltySecsRemaining (a static count) so time spent logging in doesn't consume penalty time
@@ -1990,9 +1986,6 @@ function renderQuestion() {
       skipBtn.style.cursor = '';
     }
   }
-
-  // Update skip penalty display
-  updateSkipPenaltyDisplay(rd);
 }
 
 document.getElementById('answer-input').addEventListener('keydown', e => {
@@ -2088,10 +2081,9 @@ function getSortedLeaderboard(rk) {
     .filter(n => STATE.teams[n][rk])
     .map(n => {
       const rd = STATE.teams[n][rk];
-      const rawElapsed = rd.finishTime
+      const elapsed = rd.finishTime
         ? rd.finishTime - rd.startTime
         : Date.now() - (rd.startTime || Date.now());
-      const elapsed = rawElapsed + (rd.skipPenaltyMs || 0);
       return {
         name: n,
         q: rd.currentQ,
@@ -2361,7 +2353,7 @@ function skipQuestion() {
   }
 
   const skipsLeft = MAX_SKIPS - skipsUsed - 1;
-  if (!confirm(`CHANGE QUESTION?\n\nThis will:\n\u2022 Replace the current question with a new one\n\u2022 Add a ${SKIP_PENALTY_MINS}-minute penalty to your round time\n\nSkips remaining after this: ${skipsLeft}/3\n\nAre you sure?`)) return;
+  if (!confirm(`CHANGE QUESTION?\n\nThis will:\n\u2022 Replace the current question with a new one\n\u2022 Lock your input for ${SKIP_PENALTY_MINS} minutes (penalty timer)\n\nSkips remaining after this: ${skipsLeft}/3\n\nAre you sure?`)) return;
 
   // Find a replacement not already in the team's question set
   const bank = STATE.qBanks[rk] || [];
@@ -2376,7 +2368,6 @@ function skipQuestion() {
   const replacement = available[Math.floor(Math.random() * available.length)];
   rd.questions[rd.currentQ] = replacement;
   rd.skipCount = skipsUsed + 1;
-  rd.skipPenaltyMs = (rd.skipPenaltyMs || 0) + SKIP_PENALTY_MINS * 60 * 1000;
   rd.wrongStreak = 0;
   rd.hintShown = false;
 
@@ -2384,19 +2375,8 @@ function skipQuestion() {
   saveTeamProgress();
   renderQuestion();
   const skipsNowLeft = MAX_SKIPS - rd.skipCount;
-  notify(`Question changed! +${SKIP_PENALTY_MINS}min added to your score time. ${skipsNowLeft} change(s) remaining.`, 'warning');
-}
-
-function updateSkipPenaltyDisplay(rd) {
-  const el = document.getElementById('skip-penalty-display');
-  if (!el) return;
-  const totalMins = Math.round((rd?.skipPenaltyMs || 0) / 60000);
-  if (totalMins > 0) {
-    el.textContent = `⚠ +${totalMins} MIN SKIP PENALTY APPLIED TO YOUR SCORE`;
-    el.style.display = 'block';
-  } else {
-    el.style.display = 'none';
-  }
+  notify(`Question changed! ${skipsNowLeft} change(s) remaining. Penalty starting...`, 'warning');
+  startPenalty(SKIP_PENALTY_MINS * 60, 'QUESTION CHANGE PENALTY', `You changed your question. Your input is locked for ${SKIP_PENALTY_MINS} minutes.`);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2445,7 +2425,7 @@ function setupAntiCheat() {
   document.addEventListener('paste', blockClipboard);
 }
 
-function startPenalty(secondsOverride) {
+function startPenalty(secondsOverride, title, message) {
   const remaining_init = secondsOverride ?? TAB_PENALTY_SECS;
 
   // Save remaining seconds to Firebase so penalty pauses while the team is away/logging in
@@ -2453,11 +2433,19 @@ function startPenalty(secondsOverride) {
     db.ref('gameState/teams/' + STATE.currentTeam + '/penaltySecsRemaining').set(remaining_init);
   }
 
-  // Lock the answer input
+  // Lock the answer input and skip button
   const input = document.getElementById('answer-input');
   const submitBtn = document.querySelector('#game .btn.success');
+  const skipBtn = document.getElementById('skip-btn');
   if (input) input.disabled = true;
   if (submitBtn) submitBtn.disabled = true;
+  if (skipBtn) skipBtn.disabled = true;
+
+  // Customise overlay text if provided
+  const titleEl = document.getElementById('tab-warn-title');
+  const msgEl = document.getElementById('tab-warn-msg');
+  if (titleEl) titleEl.textContent = title ?? '⚠ VIOLATION DETECTED';
+  if (msgEl) msgEl.textContent = message ?? 'Tab switching is not allowed during the quiz. Your attempt has been flagged.';
 
   // Show overlay with countdown
   const penaltyMsg = document.getElementById('tab-penalty-msg');
@@ -2485,6 +2473,15 @@ function startPenalty(secondsOverride) {
       // Unlock input
       if (input) input.disabled = false;
       if (submitBtn) submitBtn.disabled = false;
+      // Re-evaluate skip button state from current rd
+      const rk = getRoundKey();
+      const rd = STATE.teams[STATE.currentTeam]?.[rk];
+      if (skipBtn) skipBtn.disabled = (rd?.skipCount || 0) >= MAX_SKIPS;
+      // Reset overlay text back to tab-switch defaults for next time
+      const titleEl2 = document.getElementById('tab-warn-title');
+      const msgEl2 = document.getElementById('tab-warn-msg');
+      if (titleEl2) titleEl2.textContent = '⚠ VIOLATION DETECTED';
+      if (msgEl2) msgEl2.textContent = 'Tab switching is not allowed during the quiz. Your attempt has been flagged.';
       if (penaltyMsg) penaltyMsg.textContent = '';
       if (dismissBtn) dismissBtn.style.display = 'inline-block';
     }
