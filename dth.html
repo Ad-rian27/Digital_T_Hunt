@@ -2627,6 +2627,12 @@ function updateQCounts() {
   document.getElementById('r1-count').textContent = `${STATE.qBanks.r1.length} QUESTIONS`;
   document.getElementById('r2-count').textContent = `${STATE.qBanks.r2.length} QUESTIONS`;
   document.getElementById('tb-count').textContent = `${STATE.qBanks.tb.length} QUESTIONS`;
+  ['r1','r2','tb'].forEach(k => {
+    const ta = document.getElementById(`q-bank-${k}`);
+    if (ta && !ta.matches(':focus') && STATE.qBanks[k].length) {
+      ta.value = JSON.stringify(STATE.qBanks[k], null, 2);
+    }
+  });
 }
 
 function switchTab(tab) {
@@ -2639,6 +2645,7 @@ function switchTab(tab) {
   if (tab === 'results') renderFinalResultsAdmin();
   if (tab === 'teams') renderTeamList();
   if (tab === 'control') { renderAdvanceChecks(); renderAdvanceChecksTB(); renderOverrides(); }
+  if (tab === 'questions') updateQCounts();
 }
 
 function saveAdminCredentials() {
