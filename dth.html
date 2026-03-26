@@ -1961,6 +1961,15 @@ function resetEvent() {
   STATE.roundStart = null;
   STATE.roundEnd   = null;
   clearInterval(STATE.timerInterval);
+  STATE.timerInterval = null;
+
+  // Explicitly remove round timing fields from Firebase so there is no race
+  // condition where a reload reads stale roundEnd/phase before update() completes.
+  if (db) {
+    db.ref('gameState/roundStart').remove();
+    db.ref('gameState/roundEnd').remove();
+    db.ref('gameState/phase').set('pre');
+  }
 
   // Reset all control buttons
   document.getElementById('btn-start-r1').disabled  = false;
@@ -2724,9 +2733,16 @@ function refreshAdminUI() {
     s('admin-round-badge').textContent = badgeLabels[phase] || 'PRE-EVENT';
   }
 
-  // Restart admin timer if a round is in progress
-  if ((r1Active || r2Active || tbActive) && STATE.roundEnd) {
+  // Restart admin timer if a round is in progress (and the end time is still in the future).
+  // If no round is active, always stop the timer and reset the display to prevent a stale
+  // or previously-running timer from persisting after a reset or page reload.
+  if ((r1Active || r2Active || tbActive) && STATE.roundEnd && STATE.roundEnd > Date.now()) {
     startAdminTimer();
+  } else {
+    clearInterval(STATE.timerInterval);
+    STATE.timerInterval = null;
+    const timerEl = document.getElementById('ctrl-timer');
+    if (timerEl && !r1Active && !r2Active && !tbActive) timerEl.textContent = '--:--';
   }
 }
 
