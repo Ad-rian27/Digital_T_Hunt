@@ -1971,20 +1971,25 @@ function renderQuestion() {
   document.getElementById('streak-num').textContent = rd.wrongStreak;
   inp.focus();
 
-  // Update skip button
+  // Update skip button — hidden during tie-breaker
   const skipBtn = document.getElementById('skip-btn');
   if (skipBtn) {
-    const skips = rd.skipCount || 0;
-    if (skips >= 3) {
-      skipBtn.textContent = 'CHANGE QUESTION — ALL 3 CHANCES USED';
-      skipBtn.disabled = true;
-      skipBtn.style.opacity = '0.45';
-      skipBtn.style.cursor = 'not-allowed';
+    if (rk === 'tb') {
+      skipBtn.style.display = 'none';
     } else {
-      skipBtn.textContent = `CHANGE QUESTION (${skips}/3 used)`;
-      skipBtn.disabled = false;
-      skipBtn.style.opacity = '';
-      skipBtn.style.cursor = '';
+      skipBtn.style.display = '';
+      const skips = rd.skipCount || 0;
+      if (skips >= 3) {
+        skipBtn.textContent = 'CHANGE QUESTION — ALL 3 CHANCES USED';
+        skipBtn.disabled = true;
+        skipBtn.style.opacity = '0.45';
+        skipBtn.style.cursor = 'not-allowed';
+      } else {
+        skipBtn.textContent = `CHANGE QUESTION (${skips}/3 used)`;
+        skipBtn.disabled = false;
+        skipBtn.style.opacity = '';
+        skipBtn.style.cursor = '';
+      }
     }
   }
 }
@@ -2362,6 +2367,7 @@ const MAX_SKIPS = 3;
 
 function skipQuestion() {
   const rk = getRoundKey();
+  if (rk === 'tb') { notify('Question changes are not allowed during the Tie-Breaker.', 'error'); return; }
   const team = STATE.teams[STATE.currentTeam];
   const rd = team[rk];
   if (!rd || rd.finished) return;
