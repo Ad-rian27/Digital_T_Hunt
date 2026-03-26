@@ -2703,6 +2703,15 @@ function updateQCounts() {
   document.getElementById('r1-count').textContent = `${STATE.qBanks.r1.length} QUESTIONS`;
   document.getElementById('r2-count').textContent = `${STATE.qBanks.r2.length} QUESTIONS`;
   document.getElementById('tb-count').textContent = `${STATE.qBanks.tb.length} QUESTIONS`;
+
+  // Repopulate the textarea editors so the admin can see/edit the saved questions
+  // (they load correctly into STATE.qBanks from Firebase but the UI was left blank).
+  ['r1','r2','tb'].forEach(bank => {
+    const el = document.getElementById(`q-bank-${bank}`);
+    if (el && STATE.qBanks[bank].length && !el.value.trim()) {
+      el.value = JSON.stringify(STATE.qBanks[bank], null, 2);
+    }
+  });
 }
 
 function switchTab(tab) {
