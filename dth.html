@@ -1026,7 +1026,7 @@
 
       <div style="margin-bottom:24px;">
         <div class="section-title">ROUND 1 BANK (need 60 questions)</div>
-        <textarea class="field" id="q-bank-r1" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:0.75rem; padding:12px; height:140px; outline:none;" placeholder='[{"q":"What does this output?","a":"Hello","hint":"Check line 1","exact":true,"code":"print(\"Hello\")"},...]'></textarea>
+        <textarea class="field" id="q-bank-r1" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:0.75rem; padding:12px; height:140px; outline:none;" placeholder='[{"q":"What does this output?","a":"Hello","aliases":["hello","Hello!"],"hint":"Check line 1","exact":true,"code":"print(\"Hello\")"},...]'></textarea>
         <div class="flex-row" style="margin-top:8px;">
           <button class="btn" onclick="saveQuestionBank('r1')">SAVE R1 BANK</button>
           <button class="btn orange" onclick="loadSampleQuestions('r1')">LOAD SAMPLES</button>
@@ -2006,7 +2006,7 @@ function submitAnswer() {
 
   rd.totalAttempts++;
 
-  const correct = checkAnswer(raw, q.a, q.exact);
+  const correct = checkAnswer(raw, q.a, q.exact, q.aliases);
 
   if (correct) {
     inp.classList.remove('wrong');
@@ -2053,13 +2053,14 @@ function submitAnswer() {
   }
 }
 
-function checkAnswer(raw, correct, exact) {
+function checkAnswer(raw, correct, exact, aliases) {
+  const answers = [correct, ...(aliases || [])];
   if (exact) {
-    return raw.trim() === correct.trim();
+    return answers.some(a => raw.trim() === a.trim());
   }
-  // Case-insensitive, collapse whitespace
   const normalize = s => s.toLowerCase().replace(/\s+/g, ' ').trim();
-  return normalize(raw) === normalize(correct);
+  const normalRaw = normalize(raw);
+  return answers.some(a => normalRaw === normalize(a));
 }
 
 function updateTimerDisplay() {
