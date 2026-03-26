@@ -2297,8 +2297,9 @@ function setupAntiCheat() {
     }
   });
 
-  // Keyboard shortcuts disabled
+  // Keyboard shortcuts disabled (team participants only);
   document.addEventListener('keydown', e => {
+    if (STATE.isAdmin) return;
     if (e.ctrlKey && ['c','v','u','s','p','a'].includes(e.key.toLowerCase())) {
       e.preventDefault(); // block everywhere, including answer input
     }
@@ -2306,10 +2307,16 @@ function setupAntiCheat() {
     if (e.ctrlKey && e.shiftKey && ['i','j','c'].includes(e.key.toLowerCase())) e.preventDefault();
   });
 
-  // Block copy, cut, paste events entirely
-  document.addEventListener('copy',  e => e.preventDefault());
-  document.addEventListener('cut',   e => e.preventDefault());
-  document.addEventListener('paste', e => e.preventDefault());
+  // Block copy, cut, paste — team participants only; allow admin and text inputs
+  const blockClipboard = e => {
+    if (STATE.isAdmin) return;
+    const tag = e.target?.tagName?.toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    e.preventDefault();
+  };
+  document.addEventListener('copy',  blockClipboard);
+  document.addEventListener('cut',   blockClipboard);
+  document.addEventListener('paste', blockClipboard);
 }
 
 function startPenalty(secondsOverride) {
