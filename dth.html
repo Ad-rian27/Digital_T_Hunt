@@ -947,8 +947,9 @@
         <div class="attempts-counter" id="attempts-counter">Attempts: <span id="attempts-num">0</span> | Wrong streak: <span id="streak-num">0</span>/3 for hint</div>
         <input class="answer-input" id="answer-input" type="text" placeholder="Type your answer and press Enter..." autocomplete="off" autocorrect="off" spellcheck="false">
         <div class="answer-feedback" id="answer-feedback"></div>
-        <div class="flex-row">
+        <div class="flex-row" style="flex-wrap:wrap;gap:10px;align-items:center;">
           <button class="btn success" onclick="submitAnswer()">SUBMIT ANSWER</button>
+          <button class="btn orange" id="skip-btn" onclick="skipQuestion()" style="font-size:0.7rem;">CHANGE QUESTION (0/3 used)</button>
         </div>
       </div>
     </div>
@@ -1968,6 +1969,14 @@ function renderQuestion() {
   document.getElementById('attempts-num').textContent = rd.totalAttempts;
   document.getElementById('streak-num').textContent = rd.wrongStreak;
   inp.focus();
+
+  // Update skip button
+  const skipBtn = document.getElementById('skip-btn');
+  if (skipBtn) {
+    const skips = rd.skipCount || 0;
+    skipBtn.textContent = `CHANGE QUESTION (${skips}/3 used)`;
+    skipBtn.disabled = skips >= 3;
+  }
 }
 
 document.getElementById('answer-input').addEventListener('keydown', e => {
@@ -2317,6 +2326,52 @@ function exportPDF() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// SKIP QUESTION
+// ═══════════════════════════════════════════════════════════════
+const SKIP_PENALTY_MINS = 2;
+const MAX_SKIPS = 3;
+
+function skipQuestion() {
+  const rk = getRoundKey();
+  const team = STATE.teams[STATE.currentTeam];
+  const rd = team[rk];
+  if (!rd || rd.finished) return;
+
+  const skipsUsed = rd.skipCount || 0;
+  if (skipsUsed >= MAX_SKIPS) {
+    notify('Maximum question changes reached (3/3).', 'error');
+    return;
+  }
+
+  const skipsLeft = MAX_SKIPS - skipsUsed - 1;
+  if (!confirm(`CHANGE QUESTION?\n\nThis will:\n\u2022 Replace the current question with a new one\n\u2022 Add a ${SKIP_PENALTY_MINS}-minute penalty to your round time\n\nSkips remaining after this: ${skipsLeft}/3\n\nAre you sure?`)) return;
+
+  // Find a replacement not already in the team's question set
+  const bank = STATE.qBanks[rk] || [];
+  const usedQs = new Set(rd.questions.map(q => q.q));
+  const available = bank.filter(q => !usedQs.has(q.q));
+
+  if (!available.length) {
+    notify('No replacement questions available in the bank.', 'error');
+    return;
+  }
+
+  const replacement = available[Math.floor(Math.random() * available.length)];
+  rd.questions[rd.currentQ] = replacement;
+  rd.skipCount = skipsUsed + 1;
+  rd.wrongStreak = 0;
+  rd.hintShown = false;
+
+  // Deduct penalty time from round end
+  STATE.roundEnd = Math.max(Date.now() + 1000, STATE.roundEnd - SKIP_PENALTY_MINS * 60 * 1000);
+  if (db) db.ref('gameState/roundEnd').set(STATE.roundEnd);
+
+  saveTeamProgress();
+  renderQuestion();
+  notify(`Question changed! −2 min penalty applied. ${skipsLeft} skip(s) remaining.`, 'warning');
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ANTI-CHEAT
 // ═══════════════════════════════════════════════════════════════
 let tabViolations = 0;
@@ -2336,7 +2391,7 @@ function setupAntiCheat() {
         db.ref('gameState/teams/' + STATE.currentTeam + '/tabViolations').set(tabViolations);
       }
     } else if (!document.hidden && document.getElementById('game').classList.contains('active') && tabViolations > 0) {
-      startPenalty();
+      startPenalty(tabViolations * TAB_PENALTY_SECS);
     }
   });
 
