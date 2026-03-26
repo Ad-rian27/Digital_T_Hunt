@@ -1023,7 +1023,7 @@
       </p>
 
       <div style="margin-bottom:24px;">
-        <div class="section-title">ROUND 1 BANK (need 30 questions)</div>
+        <div class="section-title">ROUND 1 BANK (need 60 questions)</div>
         <textarea class="field" id="q-bank-r1" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:0.75rem; padding:12px; height:140px; outline:none;" placeholder='[{"q":"What does this output?","a":"Hello","hint":"Check line 1","exact":true,"code":"print(\"Hello\")"},...]'></textarea>
         <div class="flex-row" style="margin-top:8px;">
           <button class="btn" onclick="saveQuestionBank('r1')">SAVE R1 BANK</button>
@@ -1033,7 +1033,7 @@
       </div>
 
       <div style="margin-bottom:24px;">
-        <div class="section-title">ROUND 2 BANK (need 30 questions)</div>
+        <div class="section-title">ROUND 2 BANK (need 60 questions)</div>
         <textarea class="field" id="q-bank-r2" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:0.75rem; padding:12px; height:140px; outline:none;" placeholder='[{"q":"...","a":"...","hint":"...","exact":false},...]'></textarea>
         <div class="flex-row" style="margin-top:8px;">
           <button class="btn" onclick="saveQuestionBank('r2')">SAVE R2 BANK</button>
@@ -1043,7 +1043,7 @@
       </div>
 
       <div>
-        <div class="section-title">TIE-BREAKER BANK (3 questions, same for both teams)</div>
+        <div class="section-title">TIE-BREAKER BANK (5 questions, same for both teams)</div>
         <textarea class="field" id="q-bank-tb" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:0.75rem; padding:12px; height:100px; outline:none;" placeholder='[{"q":"...","a":"...","hint":"...","exact":false},...]'></textarea>
         <div class="flex-row" style="margin-top:8px;">
           <button class="btn" onclick="saveQuestionBank('tb')">SAVE TB BANK</button>
@@ -1160,7 +1160,8 @@ const STATE = {
 
 const ADMIN_USER = 'admin';
 const ADMIN_PASS_KEY = 'dth_admin_pass';
-const ROUND_DURATION = 30 * 60 * 1000; // 30 minutes
+const ROUND_DURATION = 25 * 60 * 1000; // 25 minutes per round
+const TB_DURATION    =  5 * 60 * 1000; //  5 minutes for tie-breaker
 
 // ─── FIREBASE CONFIG ────────────────────────────────────────────
 // 1. Go to https://console.firebase.google.com
@@ -1790,8 +1791,8 @@ function startRound(round) {
   if (!teamNames.length) { notify('Add teams first!', 'error'); return; }
 
   const bank = round === 1 ? 'r1' : 'r2';
-  if (STATE.qBanks[bank].length < 15) {
-    notify(`Need at least 15 questions in Round ${round} bank!`, 'error');
+  if (STATE.qBanks[bank].length < 60) {
+    notify(`Need at least 60 questions in Round ${round} bank!`, 'error');
     return;
   }
 
@@ -1864,17 +1865,17 @@ function startTiebreaker() {
     notify('Tie-breaker can only start after Round 2 ends.', 'warning');
     return;
   }
-  if (STATE.qBanks.tb.length < 3) { notify('Need 3 tie-breaker questions!', 'error'); return; }
+  if (STATE.qBanks.tb.length < 5) { notify('Need 5 tie-breaker questions!', 'error'); return; }
 
   STATE.phase = 'tb';
   STATE.roundStart = Date.now();
-  STATE.roundEnd = STATE.roundStart + ROUND_DURATION;
+  STATE.roundEnd = STATE.roundStart + TB_DURATION;
 
   Object.keys(STATE.teams).forEach(name => {
     const team = STATE.teams[name];
     if (!team.tbEnabled) return;
     team.tb = {
-      questions: STATE.qBanks.tb.slice(0, 3),
+      questions: STATE.qBanks.tb.slice(0, 5),
       currentQ: 0,
       wrongStreak: 0,
       totalAttempts: 0,
