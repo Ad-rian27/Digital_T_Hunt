@@ -2528,14 +2528,15 @@ function dismissTabWarning() {
   notify(`Warning! Tab switching detected (${tabViolations}x). Stay on this page.`, 'error');
 }
 
-// Block right-click globally
-document.addEventListener('contextmenu', e => e.preventDefault());
+// Block right-click globally (except admin)
+document.addEventListener('contextmenu', e => { if (!STATE.isAdmin) e.preventDefault(); });
 
-// Block copy/paste/cut globally from page load
-document.addEventListener('copy',  e => e.preventDefault());
-document.addEventListener('cut',   e => e.preventDefault());
-document.addEventListener('paste', e => e.preventDefault());
+// Block copy/paste/cut globally from page load (except admin)
+document.addEventListener('copy',  e => { if (!STATE.isAdmin) e.preventDefault(); });
+document.addEventListener('cut',   e => { if (!STATE.isAdmin) e.preventDefault(); });
+document.addEventListener('paste', e => { if (!STATE.isAdmin) e.preventDefault(); });
 document.addEventListener('keydown', e => {
+  if (STATE.isAdmin) return;
   if (e.ctrlKey && ['c','v','u','s','p','a','x'].includes(e.key.toLowerCase())) e.preventDefault();
   if (e.key === 'F12') e.preventDefault();
   // Block refresh: F5, Ctrl+R, Ctrl+Shift+R
