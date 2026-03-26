@@ -1899,6 +1899,12 @@ function startGameForTeam(rk) {
     rk === 'tb' ? 'TIE-BREAKER' : rk === 'r2' ? 'ROUND 2' : 'ROUND 1';
   document.getElementById('tb-indicator').style.display = rk === 'tb' ? 'block' : 'none';
 
+  // Reset tab violations for the new round
+  tabViolations = 0;
+  if (db && STATE.currentTeam) {
+    db.ref('gameState/teams/' + STATE.currentTeam + '/tabViolations').set(0);
+  }
+
   renderQuestion();
   updateTimerDisplay();
   startLeaderboardRefresh();
