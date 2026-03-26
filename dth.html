@@ -1918,8 +1918,9 @@ function startGameForTeam(rk) {
     }
   }
 
-  // Prevent tab switch
+  // Prevent tab switch + detect DevTools
   setupAntiCheat();
+  startDevToolsDetection();
 }
 
 function renderQuestion() {
@@ -2549,6 +2550,55 @@ window.addEventListener('beforeunload', e => {
     e.returnValue = ''; // triggers browser's built-in "Leave site?" dialog
   }
 });
+
+// ═══════════════════════════════════════════════════════════════
+// DEVTOOLS DETECTION
+// ═══════════════════════════════════════════════════════════════
+// Silence console output for team participants so nothing useful is visible
+// even if they manage to open DevTools via the browser menu.
+(function silenceConsole() {
+  const noop = () => {};
+  // We still need console.error internally for Firebase — hook it after page load
+  window.addEventListener('load', () => {
+    if (!STATE.isAdmin) {
+      ['log', 'warn', 'info', 'debug', 'table', 'dir', 'trace'].forEach(m => {
+        console[m] = noop;
+      });
+    }
+  });
+})();
+
+// Detect DevTools open via window size heuristic (docked to side or bottom).
+// Threshold of 160px avoids false positives from scrollbars / zoom levels.
+const DEVTOOLS_THRESHOLD = 160;
+let devtoolsOpen = false;
+let devtoolsCheckInterval = null;
+
+function startDevToolsDetection() {
+  if (devtoolsCheckInterval) return;
+  devtoolsCheckInterval = setInterval(() => {
+    if (STATE.isAdmin || !STATE.currentTeam) return;
+    const widthDiff  = window.outerWidth  - window.innerWidth;
+    const heightDiff = window.outerHeight - window.innerHeight;
+    const suspected  = widthDiff > DEVTOOLS_THRESHOLD || heightDiff > DEVTOOLS_THRESHOLD;
+    if (suspected && !devtoolsOpen) {
+      devtoolsOpen = true;
+      tabViolations++;
+      if (db && STATE.currentTeam) {
+        db.ref('gameState/teams/' + STATE.currentTeam + '/tabViolations').set(tabViolations);
+      }
+      if (!penaltyInterval && document.getElementById('game').classList.contains('active')) {
+        startPenalty(
+          tabViolations * TAB_PENALTY_SECS,
+          '⚠ DEVELOPER TOOLS DETECTED',
+          'Opening browser developer tools is not allowed during the quiz.'
+        );
+      }
+    } else if (!suspected) {
+      devtoolsOpen = false;
+    }
+  }, 1000);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // ADMIN UI REFRESH
