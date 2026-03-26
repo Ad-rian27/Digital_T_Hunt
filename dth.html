@@ -1226,8 +1226,20 @@ function ensureAdminPasswordConfigured() {
   }
 }
 
+// Firebase's snapshot.val() may return JavaScript arrays as plain objects
+// ({"0":{...},"1":{...}}) rather than true JS arrays, which breaks Array.isArray().
+// This helper normalises both forms into a proper array every time.
+function toArray(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  // Firebase object-encoded array: numeric string keys in insertion order
+  if (typeof val === 'object') return Object.values(val);
+  return [];
+}
+
 function scrubRoundForParticipant(roundData, allowAnswers) {
   if (!roundData) return undefined;
+  const qs = toArray(roundData.questions);
   return {
     currentQ: Number(roundData.currentQ || 0),
     wrongStreak: Number(roundData.wrongStreak || 0),
@@ -1236,7 +1248,7 @@ function scrubRoundForParticipant(roundData, allowAnswers) {
     finishTime: roundData.finishTime || null,
     finished: Boolean(roundData.finished),
     hintShown: Boolean(roundData.hintShown),
-    questions: Array.isArray(roundData.questions) ? roundData.questions.map(q => {
+    questions: qs.map(q => {
       if (allowAnswers) return q;
       return {
         q: q?.q || '',
@@ -1244,7 +1256,7 @@ function scrubRoundForParticipant(roundData, allowAnswers) {
         exact: Boolean(q?.exact),
         code: q?.code || '',
       };
-    }) : [],
+    }),
   };
 }
 
@@ -1274,7 +1286,7 @@ function sanitizeRoundProgressForWrite(existingRound, incomingRound) {
   // write their stale in-flight data back — that would undo the reset.
   if (!existingRound) return existingRound;
 
-  const total = Array.isArray(existingRound.questions) ? existingRound.questions.length : 0;
+  const total = toArray(existingRound.questions).length;
   const oldQ = Number(existingRound.currentQ || 0);
   let newQ = Number(incomingRound.currentQ || oldQ);
 
@@ -2110,10 +2122,11 @@ function startGameForTeam(rk) {
 
   // Store questions in a Firebase-isolated cache so that real-time syncs can
   // never overwrite or empty the array during active gameplay.
-  // Only populate if not already set (prevents overwriting on re-route).
+  // Use toArray() in case Firebase returned a plain object instead of a real array.
   const teamRound = STATE.teams[STATE.currentTeam]?.[rk];
-  if (teamRound?.questions?.length) {
-    STATE.activeQuestions[rk] = teamRound.questions;
+  const aqArr = toArray(teamRound?.questions);
+  if (aqArr.length > 0) {
+    STATE.activeQuestions[rk] = aqArr;
   }
 
   renderQuestion();
@@ -2146,12 +2159,15 @@ function renderQuestion() {
   const rd = team[rk];
   // Use the Firebase-isolated question cache — never touches rd.questions
   // which can be emptied by real-time syncs.
-  const questions = STATE.activeQuestions[rk] || rd.questions || [];
+  const questions = STATE.activeQuestions[rk] || toArray(rd.questions);
   const q = questions[rd.currentQ];
   const total = questions.length;
 
   if (!q) {
-    console.error('renderQuestion: no question at index', rd.currentQ, 'in', rk);
+    console.error('renderQuestion: no question at index', rd.currentQ, '/', total,
+      '| activeQuestions set:', !!STATE.activeQuestions[rk],
+      '| rd.questions type:', typeof rd.questions, Array.isArray(rd.questions) ? '(array)' : '(non-array)',
+      '| rd.questions keys:', rd.questions ? Object.keys(rd.questions).slice(0,5) : 'null');
     return;
   }
 
@@ -2208,9 +2224,19 @@ function submitAnswer() {
   if (rd.finished) return;
 
   // Use Firebase-isolated question cache so answers are never undefined.
-  const questions = STATE.activeQuestions[rk] || rd.questions || [];
+  const questions = STATE.activeQuestions[rk] || toArray(rd.questions);
   const q = questions[rd.currentQ];
-  if (!q) return; // Guard: should never happen, but prevents a crash if it does.
+  if (!q) {
+    console.error('submitAnswer: no question at index', rd.currentQ, '— questions.length:', questions.length,
+      '| activeQuestions set:', !!STATE.activeQuestions[rk]);
+    return;
+  }
+  if (q.a === undefined || q.a === null) {
+    console.error('submitAnswer: question has no answer field (q.a). Question keys:', Object.keys(q));
+    document.getElementById('answer-feedback').textContent = '⚠ Question data error — contact admin.';
+    document.getElementById('answer-feedback').className = 'answer-feedback wrong';
+    return;
+  }
 
   const raw = document.getElementById('answer-input').value;
   const inp = document.getElementById('answer-input');
@@ -2232,7 +2258,7 @@ function submitAnswer() {
       const liveTeam = STATE.teams[STATE.currentTeam];
       const liveRd = liveTeam ? liveTeam[rk] : null;
       if (!liveRd) return;
-      const liveQuestions = STATE.activeQuestions[rk] || liveRd.questions || [];
+      const liveQuestions = STATE.activeQuestions[rk] || toArray(liveRd.questions);
       liveRd.wrongStreak = 0;
       liveRd.hintShown = false;
       liveRd.currentQ++;
@@ -2306,7 +2332,7 @@ function getSortedLeaderboard(rk) {
       return {
         name: n,
         q: rd.currentQ,
-        total: rd.questions?.length || 15,
+        total: toArray(rd.questions).length || 15,
         finished: rd.finished,
         elapsed,
         attempts: rd.totalAttempts || 0,
