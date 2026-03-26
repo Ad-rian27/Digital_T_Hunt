@@ -980,6 +980,7 @@
     <button class="tab-btn" onclick="switchTab('control')">ROUND CONTROL</button>
     <button class="tab-btn" onclick="switchTab('leaderboard')">LEADERBOARD</button>
     <button class="tab-btn" onclick="switchTab('results')">RESULTS</button>
+    <button class="tab-btn" onclick="switchTab('settings')">SETTINGS</button>
   </div>
 
   <!-- TEAMS TAB -->
@@ -1109,6 +1110,26 @@
       </div>
     </div>
   </div>
+
+  <div class="tab-panel" id="tab-settings">
+    <div class="card">
+      <div class="section-title">ADMIN CREDENTIALS</div>
+      <p style="color:var(--text-dim);font-size:0.82rem;margin-bottom:16px;">Change the username and password used to log in as admin. Credentials are stored in Firebase.</p>
+      <div class="field" style="margin-bottom:10px;">
+        <label>NEW USERNAME</label>
+        <input class="field" id="new-admin-user" type="text" placeholder="New username" autocomplete="off">
+      </div>
+      <div class="field" style="margin-bottom:10px;">
+        <label>NEW PASSWORD</label>
+        <input class="field" id="new-admin-pass" type="password" placeholder="New password" autocomplete="new-password">
+      </div>
+      <div class="field" style="margin-bottom:16px;">
+        <label>CONFIRM PASSWORD</label>
+        <input class="field" id="confirm-admin-pass" type="password" placeholder="Confirm new password" autocomplete="new-password">
+      </div>
+      <button class="btn success" onclick="saveAdminCredentials()">SAVE CREDENTIALS</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════ -->
@@ -1152,8 +1173,7 @@ const STATE = {
   // team.r1 = { questions: [], currentQ: 0, wrongStreak: 0, totalAttempts: 0, startTime, finishTime, hintShown: false }
 };
 
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = 'admin2024'; // Change as needed
+const ADMIN_DEFAULTS = { user: 'admin', pass: 'admin2024' }; // Used only on first run — change via Settings tab
 const ROUND_DURATION = 25 * 60 * 1000; // 25 minutes
 const TB_DURATION    =  5 * 60 * 1000; //  5 minutes
 
@@ -1291,15 +1311,36 @@ function doLogin() {
   const err = document.getElementById('login-error');
 
   if (STATE.loginType === 'admin') {
-    if (user === ADMIN_USER && pass === ADMIN_PASS) {
-      STATE.isAdmin = true;
-      STATE.currentTeam = null;
-      showScreen('admin');
-      refreshAdminUI();
-      startLeaderboardRefresh();
+    err.style.color = 'var(--accent)';
+    err.style.display = 'block';
+    err.textContent = 'Verifying...';
+    const verifyAdmin = (storedUser, storedPass) => {
+      err.style.color = 'var(--danger)';
+      if (user === storedUser && pass === storedPass) {
+        STATE.isAdmin = true;
+        STATE.currentTeam = null;
+        err.style.display = 'none';
+        showScreen('admin');
+        refreshAdminUI();
+        startLeaderboardRefresh();
+        if (storedUser === ADMIN_DEFAULTS.user && storedPass === ADMIN_DEFAULTS.pass) {
+          notify('Using default credentials — please change them in Settings!', 'warning');
+        }
+      } else {
+        err.style.display = 'block';
+        err.textContent = 'Invalid admin credentials.';
+      }
+    };
+    if (db) {
+      db.ref('adminConfig').once('value', snap => {
+        const cfg = snap.val();
+        verifyAdmin(
+          cfg?.user ?? ADMIN_DEFAULTS.user,
+          cfg?.pass ?? ADMIN_DEFAULTS.pass
+        );
+      }).catch(() => verifyAdmin(ADMIN_DEFAULTS.user, ADMIN_DEFAULTS.pass));
     } else {
-      err.style.display = 'block';
-      err.textContent = 'Invalid admin credentials.';
+      verifyAdmin(ADMIN_DEFAULTS.user, ADMIN_DEFAULTS.pass);
     }
   } else {
     err.style.color = 'var(--accent)';
@@ -2419,9 +2460,7 @@ function updateQCounts() {
 }
 
 function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach((b, i) => {
-    b.classList.remove('active');
-  });
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelector(`[onclick="switchTab('${tab}')"]`).classList.add('active');
   document.getElementById(`tab-${tab}`).classList.add('active');
@@ -2430,6 +2469,24 @@ function switchTab(tab) {
   if (tab === 'results') renderFinalResultsAdmin();
   if (tab === 'teams') renderTeamList();
   if (tab === 'control') { renderAdvanceChecks(); renderAdvanceChecksTB(); renderOverrides(); }
+}
+
+function saveAdminCredentials() {
+  const newUser = document.getElementById('new-admin-user').value.trim();
+  const newPass = document.getElementById('new-admin-pass').value;
+  const confirmPass = document.getElementById('confirm-admin-pass').value;
+  if (!newUser) { notify('Username cannot be empty.', 'error'); return; }
+  if (newPass.length < 6) { notify('Password must be at least 6 characters.', 'error'); return; }
+  if (newPass !== confirmPass) { notify('Passwords do not match.', 'error'); return; }
+  if (!db) { notify('No Firebase connection.', 'error'); return; }
+  db.ref('adminConfig').set({ user: newUser, pass: newPass })
+    .then(() => {
+      notify('Admin credentials updated successfully.', 'success');
+      document.getElementById('new-admin-user').value = '';
+      document.getElementById('new-admin-pass').value = '';
+      document.getElementById('confirm-admin-pass').value = '';
+    })
+    .catch(e => notify('Failed to save: ' + e.message, 'error'));
 }
 
 // ═══════════════════════════════════════════════════════════════
