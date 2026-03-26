@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "gameState": {
+      ".read": true,
+      ".write": true
+    },
+    "adminConfig": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

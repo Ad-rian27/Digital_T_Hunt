@@ -12,5 +12,8 @@
         "destination": "/dth.html"
       }
     ]
+  },
+  "database": {
+    "rules": "database.rules.json"
   }
 }
