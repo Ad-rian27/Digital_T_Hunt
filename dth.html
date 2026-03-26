@@ -2368,7 +2368,7 @@ function exportPDF() {
 // ═══════════════════════════════════════════════════════════════
 // SKIP QUESTION
 // ═══════════════════════════════════════════════════════════════
-const SKIP_PENALTY_MINS = 2;
+const SKIP_PENALTY_SECS = 90;
 const MAX_SKIPS = 3;
 
 function skipQuestion() {
@@ -2385,7 +2385,7 @@ function skipQuestion() {
   }
 
   const skipsLeft = MAX_SKIPS - skipsUsed - 1;
-  if (!confirm(`CHANGE QUESTION?\n\nThis will:\n\u2022 Replace the current question with a new one\n\u2022 Lock your input for ${SKIP_PENALTY_MINS} minutes (penalty timer)\n\nSkips remaining after this: ${skipsLeft}/3\n\nAre you sure?`)) return;
+  if (!confirm(`CHANGE QUESTION?\n\nThis will:\n\u2022 Replace the current question with a new one\n\u2022 Lock your input for 1 min 30 sec (penalty timer)\n\nSkips remaining after this: ${skipsLeft}/3\n\nAre you sure?`)) return;
 
   // Find a replacement not already in the team's question set
   const bank = STATE.qBanks[rk] || [];
@@ -2408,7 +2408,7 @@ function skipQuestion() {
   renderQuestion();
   const skipsNowLeft = MAX_SKIPS - rd.skipCount;
   notify(`Question changed! ${skipsNowLeft} change(s) remaining. Penalty starting...`, 'warning');
-  startPenalty(SKIP_PENALTY_MINS * 60, 'QUESTION CHANGE PENALTY', `You changed your question. Your input is locked for ${SKIP_PENALTY_MINS} minutes.`);
+  startPenalty(SKIP_PENALTY_SECS, 'QUESTION CHANGE PENALTY', 'You changed your question. Your input is locked for 1 min 30 sec.');
 }
 
 // ═══════════════════════════════════════════════════════════════
