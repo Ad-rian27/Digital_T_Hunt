@@ -2162,6 +2162,24 @@ function startLeaderboardRefresh() {
     renderSidebarLB();
     if (STATE.isAdmin) { renderAdminLB(); renderTeamList(); renderOverrides(); }
     if (document.getElementById('waiting').classList.contains('active')) renderWaitingLeaderboard();
+
+    // Lock team out when the round timer expires
+    if (!STATE.isAdmin && STATE.currentTeam && STATE.roundEnd) {
+      const gameScreen = document.getElementById('game');
+      if (gameScreen && gameScreen.classList.contains('active')) {
+        const remaining = STATE.roundEnd - Date.now();
+        if (remaining <= 0) {
+          const rk = getRoundKey();
+          const rd = STATE.teams[STATE.currentTeam]?.[rk];
+          if (rd && !rd.finished) {
+            rd.finished = true;
+            rd.finishTime = STATE.roundEnd;
+            saveTeamProgress();
+            showWaiting('TIME\'S UP!', 'The round has ended. Waiting for the admin to continue.');
+          }
+        }
+      }
+    }
   }, 1000);
 }
 
@@ -2399,7 +2417,15 @@ function setupAntiCheat() {
         db.ref('gameState/teams/' + STATE.currentTeam + '/tabViolations').set(tabViolations);
       }
     } else if (!document.hidden && document.getElementById('game').classList.contains('active') && tabViolations > 0) {
-      startPenalty(tabViolations * TAB_PENALTY_SECS);
+      // Don't hijack an already-running penalty (e.g. question-change lockout)
+      if (!penaltyInterval) {
+        startPenalty(tabViolations * TAB_PENALTY_SECS);
+      } else {
+        // Just log the violation count — penalty is already running
+        if (db && STATE.currentTeam) {
+          db.ref('gameState/teams/' + STATE.currentTeam + '/tabViolations').set(tabViolations);
+        }
+      }
     }
   });
 
@@ -2427,6 +2453,7 @@ function setupAntiCheat() {
 
 function startPenalty(secondsOverride, title, message) {
   const remaining_init = secondsOverride ?? TAB_PENALTY_SECS;
+  const isSkipPenalty = !!title; // skip penalties always pass a title
 
   // Save remaining seconds to Firebase so penalty pauses while the team is away/logging in
   if (db && STATE.currentTeam) {
@@ -2483,7 +2510,12 @@ function startPenalty(secondsOverride, title, message) {
       if (titleEl2) titleEl2.textContent = '⚠ VIOLATION DETECTED';
       if (msgEl2) msgEl2.textContent = 'Tab switching is not allowed during the quiz. Your attempt has been flagged.';
       if (penaltyMsg) penaltyMsg.textContent = '';
-      if (dismissBtn) dismissBtn.style.display = 'inline-block';
+      // Show dismiss button only for tab-switch penalties; skip penalties auto-close
+      if (isSkipPenalty) {
+        document.getElementById('tab-warning').classList.remove('show');
+      } else {
+        if (dismissBtn) dismissBtn.style.display = 'inline-block';
+      }
     }
   }, 1000);
 }
