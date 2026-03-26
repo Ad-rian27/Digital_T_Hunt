@@ -1,0 +1,2518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debug Quest — Treasure Hunt</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #0f1629;
+    --surface2: #151d35;
+    --border: #1e2d50;
+    --accent: #00d4ff;
+    --accent2: #ff6b35;
+    --accent3: #39ff14;
+    --gold: #ffd700;
+    --silver: #c0c0c0;
+    --text: #e0e8ff;
+    --text-dim: #6b7fa3;
+    --danger: #ff3b5c;
+    --success: #39ff14;
+    --warning: #ffae00;
+    --glow: 0 0 20px rgba(0,212,255,0.3);
+    --glow-green: 0 0 20px rgba(57,255,20,0.3);
+    --glow-orange: 0 0 20px rgba(255,107,53,0.3);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Rajdhani', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Scanline effect */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.05) 2px,
+      rgba(0,0,0,0.05) 4px
+    );
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .page { position: relative; z-index: 2; }
+
+  /* ─── SCREEN SYSTEM ─── */
+  .screen { display: none; min-height: 100vh; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* ─── COMMON COMPONENTS ─── */
+  .btn {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 12px 28px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s;
+    clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  }
+  .btn:hover {
+    background: var(--accent);
+    color: var(--bg);
+    box-shadow: var(--glow);
+  }
+  .btn.danger { border-color: var(--danger); color: var(--danger); }
+  .btn.danger:hover { background: var(--danger); color: white; box-shadow: 0 0 20px rgba(255,59,92,0.4); }
+  .btn.success { border-color: var(--success); color: var(--success); }
+  .btn.success:hover { background: var(--success); color: var(--bg); box-shadow: var(--glow-green); }
+  .btn.orange { border-color: var(--accent2); color: var(--accent2); }
+  .btn.orange:hover { background: var(--accent2); color: white; box-shadow: var(--glow-orange); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 24px;
+    position: relative;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 40px; height: 3px;
+    background: var(--accent);
+  }
+
+  .mono { font-family: 'Share Tech Mono', monospace; }
+
+  .tag {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    padding: 4px 10px;
+    border: 1px solid currentColor;
+    display: inline-block;
+  }
+
+  /* ─── LANDING SCREEN ─── */
+  #landing {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px 20px;
+  }
+  .landing-logo {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(2rem, 6vw, 4rem);
+    font-weight: 900;
+    color: var(--accent);
+    text-shadow: 0 0 40px rgba(0,212,255,0.6), 0 0 80px rgba(0,212,255,0.2);
+    letter-spacing: 4px;
+    margin-bottom: 8px;
+    animation: pulse-glow 3s ease-in-out infinite;
+  }
+  @keyframes pulse-glow {
+    0%, 100% { text-shadow: 0 0 40px rgba(0,212,255,0.6), 0 0 80px rgba(0,212,255,0.2); }
+    50% { text-shadow: 0 0 60px rgba(0,212,255,0.9), 0 0 120px rgba(0,212,255,0.4); }
+  }
+  .landing-sub {
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    letter-spacing: 4px;
+    margin-bottom: 60px;
+  }
+  .landing-buttons { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+
+  /* ─── LOGIN SCREEN ─── */
+  #login {
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+  .login-box {
+    width: 100%;
+    max-width: 440px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 40px;
+    position: relative;
+  }
+  .login-box::before { content: ''; position: absolute; top: 0; left: 0; width: 60px; height: 3px; background: var(--accent); }
+  .login-box::after { content: ''; position: absolute; bottom: 0; right: 0; width: 60px; height: 3px; background: var(--accent2); }
+  .login-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .login-desc { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 30px; }
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.9rem;
+    padding: 12px 16px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 10px rgba(0,212,255,0.1);
+  }
+  .field select option { background: var(--bg); }
+  .field textarea { resize: vertical; min-height: 80px; }
+  .error-msg {
+    color: var(--danger);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    margin-top: 12px;
+    display: none;
+  }
+
+  /* ─── ADMIN SCREEN ─── */
+  #admin { padding: 24px; gap: 24px; }
+  .admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .admin-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.2rem;
+    color: var(--accent);
+    letter-spacing: 3px;
+  }
+  .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; }
+  @media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; } }
+
+  .section-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .team-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    background: var(--bg);
+    transition: border-color 0.2s;
+  }
+  .team-row:hover { border-color: var(--accent); }
+  .team-name-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--accent);
+  }
+  .team-status { font-size: 0.8rem; color: var(--text-dim); }
+  .team-actions { display: flex; gap: 8px; }
+
+  .round-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .round-status-bar {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 16px;
+  }
+  .round-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .round-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .timer-display {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 2rem;
+    color: var(--warning);
+    text-align: center;
+    padding: 20px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    text-shadow: 0 0 20px rgba(255,174,0,0.4);
+  }
+  .timer-display.danger-time { color: var(--danger); text-shadow: 0 0 20px rgba(255,59,92,0.5); animation: blink 0.5s infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  /* Live leaderboard */
+  .lb-row {
+    display: grid;
+    grid-template-columns: 40px 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    background: var(--bg);
+    transition: all 0.3s;
+  }
+  .lb-row.rank-1 { border-color: var(--gold); }
+  .lb-row.rank-2 { border-color: var(--silver); }
+  .lb-row.rank-3 { border-color: #cd7f32; }
+  .lb-rank {
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    font-size: 1rem;
+  }
+  .rank-1 .lb-rank { color: var(--gold); }
+  .rank-2 .lb-rank { color: var(--silver); }
+  .rank-3 .lb-rank { color: #cd7f32; }
+  .lb-name { font-family: 'Share Tech Mono', monospace; font-size: 0.9rem; }
+  .lb-progress {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--accent);
+  }
+  .lb-time { font-size: 0.75rem; color: var(--text-dim); }
+  .progress-bar-wrap {
+    height: 3px;
+    background: var(--border);
+    margin-top: 4px;
+    grid-column: 2 / 5;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.5s ease;
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  /* Advance checkboxes */
+  .advance-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .advance-check:hover { border-color: var(--accent); }
+  .advance-check input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+  .advance-check label { cursor: pointer; font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; }
+
+  /* ─── GAME SCREEN ─── */
+  #game { padding: 0; }
+  .game-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .game-team-name {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.9rem;
+    letter-spacing: 2px;
+    color: var(--accent);
+  }
+  .game-round-badge {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 2px;
+    padding: 6px 14px;
+    border: 1px solid var(--accent2);
+    color: var(--accent2);
+  }
+  .game-timer {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.1rem;
+    color: var(--warning);
+  }
+  .game-timer.danger { color: var(--danger); animation: blink 0.5s infinite; }
+
+  .game-body {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 0;
+    flex: 1;
+    min-height: calc(100vh - 65px);
+  }
+  @media (max-width: 768px) { .game-body { grid-template-columns: 1fr; } }
+
+  .question-area {
+    padding: 32px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .q-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .q-number {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+  }
+  .q-dots { display: flex; gap: 6px; }
+  .q-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: all 0.3s;
+  }
+  .q-dot.done { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .q-dot.current { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+  .question-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 28px;
+    position: relative;
+  }
+  .question-text {
+    font-size: 1.1rem;
+    line-height: 1.7;
+    color: var(--text);
+    margin-bottom: 16px;
+  }
+  .code-block {
+    background: #080c18;
+    border: 1px solid var(--border);
+    padding: 16px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.85rem;
+    color: #a8d8a8;
+    white-space: pre-wrap;
+    margin-top: 12px;
+    border-left: 2px solid var(--accent2);
+    overflow-x: auto;
+  }
+
+  .hint-box {
+    background: rgba(255,174,0,0.05);
+    border: 1px solid rgba(255,174,0,0.3);
+    border-left: 3px solid var(--warning);
+    padding: 16px;
+    display: none;
+    animation: fadeIn 0.3s ease;
+  }
+  .hint-box.visible { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+  .hint-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    color: var(--warning);
+    margin-bottom: 6px;
+  }
+  .hint-text { font-size: 0.9rem; color: var(--text-dim); }
+
+  .answer-area { display: flex; flex-direction: column; gap: 12px; }
+  .answer-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1rem;
+    padding: 14px 18px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .answer-input:focus { border-color: var(--accent); box-shadow: 0 0 12px rgba(0,212,255,0.1); }
+  .answer-input.wrong { border-color: var(--danger); box-shadow: 0 0 12px rgba(255,59,92,0.2); animation: shake 0.3s ease; }
+  .answer-input.correct { border-color: var(--success); box-shadow: 0 0 12px rgba(57,255,20,0.2); }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    75% { transform: translateX(8px); }
+  }
+
+  .answer-feedback {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    min-height: 20px;
+  }
+  .answer-feedback.wrong { color: var(--danger); }
+  .answer-feedback.correct { color: var(--success); }
+
+  .attempts-counter {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .attempts-counter span { color: var(--warning); }
+
+  /* Sidebar leaderboard */
+  .game-sidebar {
+    padding: 20px;
+    background: var(--surface);
+    overflow-y: auto;
+  }
+  .sidebar-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-lb-row {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .sidebar-lb-row.my-team { border-color: var(--accent); }
+  .sidebar-lb-row::before {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0;
+    height: 2px;
+    background: var(--accent);
+    transition: width 0.5s ease;
+  }
+  .slb-rank-name {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .slb-rank { font-family: 'Orbitron', monospace; font-size: 0.75rem; color: var(--text-dim); }
+  .slb-name { font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; }
+  .slb-q {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--accent);
+  }
+  .my-team-badge {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.5rem;
+    letter-spacing: 1px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 2px 6px;
+  }
+
+  /* ─── WAITING SCREEN ─── */
+  #waiting {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 24px;
+  }
+  .waiting-icon {
+    font-size: 4rem;
+    animation: spin 4s linear infinite;
+  }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .waiting-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.4rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+  }
+  .waiting-msg { color: var(--text-dim); font-size: 0.9rem; max-width: 400px; }
+  .pulse-dots { display: flex; gap: 8px; justify-content: center; }
+  .pulse-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse-dot 1.4s ease-in-out infinite;
+  }
+  .pulse-dot:nth-child(2) { animation-delay: 0.2s; }
+  .pulse-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes pulse-dot { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
+
+  /* ─── RESULTS SCREEN ─── */
+  #results {
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    gap: 32px;
+  }
+  .results-title {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(1.5rem, 4vw, 2.5rem);
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: var(--gold);
+    text-shadow: 0 0 40px rgba(255,215,0,0.5);
+    text-align: center;
+  }
+  .podium {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    justify-content: center;
+  }
+  .podium-item { text-align: center; }
+  .podium-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 16px 24px;
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    font-size: 1.5rem;
+    position: relative;
+  }
+  .podium-1 {
+    background: linear-gradient(to top, rgba(255,215,0,0.15), transparent);
+    border: 2px solid var(--gold);
+    color: var(--gold);
+    height: 140px;
+    width: 160px;
+    box-shadow: 0 0 30px rgba(255,215,0,0.3);
+  }
+  .podium-2 {
+    background: linear-gradient(to top, rgba(192,192,192,0.1), transparent);
+    border: 2px solid var(--silver);
+    color: var(--silver);
+    height: 100px;
+    width: 140px;
+  }
+  .podium-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-top: 8px;
+    letter-spacing: 1px;
+  }
+  .podium-label { font-size: 0.6rem; letter-spacing: 2px; opacity: 0.7; margin-bottom: 8px; }
+
+  .results-table {
+    width: 100%;
+    max-width: 700px;
+    border-collapse: collapse;
+  }
+  .results-table th {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    padding: 10px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .results-table td {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.85rem;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(30,45,80,0.5);
+  }
+
+  /* ─── NOTIFICATIONS ─── */
+  #notif-container {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 320px;
+  }
+  .notif {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    animation: slideIn 0.3s ease, fadeOut 0.3s ease 3.7s forwards;
+  }
+  .notif.success { border-left-color: var(--success); }
+  .notif.error { border-left-color: var(--danger); }
+  .notif.warning { border-left-color: var(--warning); }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes fadeOut { to { opacity: 0; transform: translateX(20px); } }
+
+  /* ─── TAB WARNING OVERLAY ─── */
+  #tab-warning {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.95);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 20px;
+    text-align: center;
+    padding: 40px;
+  }
+  #tab-warning.show { display: flex; }
+  .tab-warn-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.5rem;
+    color: var(--danger);
+    letter-spacing: 3px;
+    animation: blink 0.5s infinite;
+  }
+  .tab-warn-msg { color: var(--text-dim); max-width: 400px; }
+
+  /* ─── OFFLINE BANNER ─── */
+  #offline-banner {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: var(--danger);
+    color: #fff;
+    text-align: center;
+    padding: 8px 16px;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 2px;
+    z-index: 10000;
+  }
+  #offline-banner.show { display: block; }
+
+  /* misc */
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+  .flex-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+  input[type="checkbox"] { accent-color: var(--accent); }
+
+  /* Add team form */
+  .add-team-form {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* Question upload area */
+  .upload-area {
+    border: 2px dashed var(--border);
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    margin-bottom: 12px;
+  }
+  .upload-area:hover { border-color: var(--accent); }
+  .upload-area p { color: var(--text-dim); font-size: 0.85rem; }
+
+  .question-count-badge {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    border: 1px solid var(--accent3);
+    color: var(--accent3);
+    display: inline-block;
+    margin-top: 8px;
+  }
+
+  .scrollable { overflow-y: auto; max-height: 300px; }
+
+  /* Correct answer animation */
+  .correct-flash {
+    animation: correct-flash 0.5s ease;
+  }
+  @keyframes correct-flash {
+    0% { background: rgba(57,255,20,0.2); }
+    100% { background: transparent; }
+  }
+
+  /* round end banner */
+  .round-end-banner {
+    background: linear-gradient(135deg, var(--surface), var(--surface2));
+    border: 1px solid var(--accent);
+    padding: 32px;
+    text-align: center;
+    max-width: 600px;
+    width: 100%;
+  }
+  .reb-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.2rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+  .reb-msg { color: var(--text-dim); }
+
+  /* Tie-breaker */
+  .tb-banner {
+    background: linear-gradient(135deg, rgba(255,107,53,0.1), transparent);
+    border: 1px solid var(--accent2);
+    padding: 8px 16px;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 2px;
+    color: var(--accent2);
+    text-align: center;
+  }
+
+  /* Admin tab nav */
+  .tab-nav { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab-btn {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 2px;
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn:hover { color: var(--text); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- NOTIFICATION CONTAINER -->
+<div id="notif-container"></div>
+
+<!-- OFFLINE BANNER -->
+<div id="offline-banner">⚠ CONNECTION LOST — RECONNECTING...</div>
+
+<!-- TAB WARNING OVERLAY -->
+<div id="tab-warning">
+  <div class="tab-warn-title">⚠ VIOLATION DETECTED</div>
+  <div class="tab-warn-msg">Tab switching is not allowed during the quiz. Your attempt has been flagged.</div>
+  <div id="tab-penalty-msg" style="font-family:'Orbitron',monospace;font-size:1.1rem;color:var(--danger);margin:8px 0;"></div>
+  <button class="btn danger" id="tab-dismiss-btn" onclick="dismissTabWarning()" style="display:none;">RETURN TO QUIZ</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- LANDING SCREEN -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="screen active" id="landing">
+  <div style="margin-bottom: 24px;">
+    <div class="landing-logo" id="landing-logo">DEBUG QUEST</div>
+    <div class="landing-sub">// TREASURE HUNT //</div>
+  </div>
+  <div class="landing-buttons">
+    <button class="btn" onclick="showLogin('team')">TEAM LOGIN</button>
+    <button class="btn orange" onclick="showLogin('admin')">ADMIN PANEL</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- LOGIN SCREEN -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="screen" id="login">
+  <div class="login-box">
+    <div class="login-title" id="login-title">TEAM LOGIN</div>
+    <div class="login-desc" id="login-desc">Enter your team credentials to begin.</div>
+    <div class="field">
+      <label>TEAM / USERNAME</label>
+      <input type="text" id="login-user" placeholder="Enter team name..." autocomplete="off">
+    </div>
+    <div class="field">
+      <label>PASSWORD</label>
+      <input type="password" id="login-pass" placeholder="Enter password...">
+    </div>
+    <div class="error-msg" id="login-error">Invalid credentials. Try again.</div>
+    <div style="display:flex; gap:12px; margin-top:8px;">
+      <button class="btn" onclick="doLogin()">ENTER</button>
+      <button class="btn danger" onclick="showScreen('landing')">BACK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- WAITING SCREEN -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="screen" id="waiting">
+  <div class="waiting-icon" id="waiting-icon">⚙</div>
+  <div class="waiting-title" id="waiting-title">STANDBY</div>
+  <div class="waiting-msg" id="waiting-msg">Waiting for the admin to start the round. Stay ready.</div>
+  <div class="pulse-dots" id="waiting-dots">
+    <div class="pulse-dot"></div>
+    <div class="pulse-dot"></div>
+    <div class="pulse-dot"></div>
+  </div>
+  <div id="waiting-leaderboard" style="width:100%;max-width:500px;"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- GAME SCREEN -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="screen" id="game">
+  <div class="game-header">
+    <div>
+      <div class="game-team-name" id="game-team-name">TEAM A</div>
+      <div id="tb-indicator" class="tb-banner" style="display:none; margin-top:4px;">TIE-BREAKER ROUND</div>
+    </div>
+    <div class="game-round-badge" id="game-round-badge">ROUND 1</div>
+    <div class="game-timer" id="game-timer">30:00</div>
+  </div>
+
+  <div class="game-body">
+    <div class="question-area">
+      <!-- Question meta -->
+      <div class="q-meta">
+        <div class="q-number" id="q-number">QUESTION 1 / 15</div>
+        <div class="q-dots" id="q-dots"></div>
+      </div>
+
+      <!-- Question card -->
+      <div class="question-card" id="question-card">
+        <div class="question-text" id="question-text">Loading question...</div>
+        <div class="code-block" id="code-block" style="display:none;"></div>
+      </div>
+
+      <!-- Hint -->
+      <div class="hint-box" id="hint-box">
+        <div class="hint-label">// HINT</div>
+        <div class="hint-text" id="hint-text"></div>
+      </div>
+
+      <!-- Answer -->
+      <div class="answer-area">
+        <div class="attempts-counter" id="attempts-counter">Attempts: <span id="attempts-num">0</span> | Wrong streak: <span id="streak-num">0</span>/3 for hint</div>
+        <input class="answer-input" id="answer-input" type="text" placeholder="Type your answer and press Enter..." autocomplete="off" autocorrect="off" spellcheck="false">
+        <div class="answer-feedback" id="answer-feedback"></div>
+        <div class="flex-row">
+          <button class="btn success" onclick="submitAnswer()">SUBMIT ANSWER</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar leaderboard -->
+    <div class="game-sidebar">
+      <div class="sidebar-title">// LIVE STANDINGS</div>
+      <div id="sidebar-lb"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- ADMIN SCREEN -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="screen" id="admin">
+  <div class="admin-header">
+    <div class="admin-title">ADMIN CONTROL</div>
+    <div class="flex-row">
+      <span id="admin-round-badge" class="tag" style="color:var(--accent); border-color:var(--accent);">PRE-EVENT</span>
+      <button class="btn danger" onclick="adminLogout()">LOGOUT</button>
+    </div>
+  </div>
+
+  <!-- Tab navigation -->
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('teams')">TEAMS</button>
+    <button class="tab-btn" onclick="switchTab('questions')">QUESTIONS</button>
+    <button class="tab-btn" onclick="switchTab('control')">ROUND CONTROL</button>
+    <button class="tab-btn" onclick="switchTab('leaderboard')">LEADERBOARD</button>
+    <button class="tab-btn" onclick="switchTab('results')">RESULTS</button>
+  </div>
+
+  <!-- TEAMS TAB -->
+  <div class="tab-panel active" id="tab-teams">
+    <div class="card">
+      <div class="section-title">EVENT SETTINGS</div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>EVENT NAME</label>
+        <input type="text" id="event-name-input" placeholder="Debug Quest" value="Debug Quest">
+      </div>
+      <button class="btn" onclick="saveEventName()">SAVE NAME</button>
+    </div>
+    <div class="card">
+      <div class="section-title">ADD NEW TEAM</div>
+      <div class="add-team-form">
+        <div class="mini-grid">
+          <div class="field" style="margin:0;">
+            <label>TEAM NAME</label>
+            <input type="text" id="new-team-name" placeholder="e.g. Team Alpha">
+          </div>
+          <div class="field" style="margin:0;">
+            <label>PASSWORD</label>
+            <input type="text" id="new-team-pass" placeholder="e.g. alpha123">
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <button class="btn success" onclick="addTeam()">ADD TEAM</button>
+        </div>
+      </div>
+      <div class="section-title">REGISTERED TEAMS</div>
+      <div id="team-list" class="scrollable"></div>
+    </div>
+  </div>
+
+  <!-- QUESTIONS TAB -->
+  <div class="tab-panel" id="tab-questions">
+    <div class="card">
+      <div class="section-title">QUESTION BANKS</div>
+      <p style="color:var(--text-dim); font-size:0.85rem; margin-bottom:16px;">
+        Paste questions as JSON or use the manual form. Each question: <span class="mono" style="color:var(--accent); font-size:0.8rem;">{"q":"...","a":"...","hint":"...","exact":false,"code":"..."}</span>
+      </p>
+
+      <div style="margin-bottom:24px;">
+        <div class="section-title">ROUND 1 BANK (need 30 questions)</div>
+        <textarea class="field" id="q-bank-r1" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:0.75rem; padding:12px; height:140px; outline:none;" placeholder='[{"q":"What does this output?","a":"Hello","hint":"Check line 1","exact":true,"code":"print(\"Hello\")"},...]'></textarea>
+        <div class="flex-row" style="margin-top:8px;">
+          <button class="btn" onclick="saveQuestionBank('r1')">SAVE R1 BANK</button>
+          <button class="btn orange" onclick="loadSampleQuestions('r1')">LOAD SAMPLES</button>
+          <span class="question-count-badge" id="r1-count">0 QUESTIONS</span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:24px;">
+        <div class="section-title">ROUND 2 BANK (need 30 questions)</div>
+        <textarea class="field" id="q-bank-r2" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:0.75rem; padding:12px; height:140px; outline:none;" placeholder='[{"q":"...","a":"...","hint":"...","exact":false},...]'></textarea>
+        <div class="flex-row" style="margin-top:8px;">
+          <button class="btn" onclick="saveQuestionBank('r2')">SAVE R2 BANK</button>
+          <button class="btn orange" onclick="loadSampleQuestions('r2')">LOAD SAMPLES</button>
+          <span class="question-count-badge" id="r2-count">0 QUESTIONS</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">TIE-BREAKER BANK (3 questions, same for both teams)</div>
+        <textarea class="field" id="q-bank-tb" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:0.75rem; padding:12px; height:100px; outline:none;" placeholder='[{"q":"...","a":"...","hint":"...","exact":false},...]'></textarea>
+        <div class="flex-row" style="margin-top:8px;">
+          <button class="btn" onclick="saveQuestionBank('tb')">SAVE TB BANK</button>
+          <button class="btn orange" onclick="loadSampleQuestions('tb')">LOAD SAMPLES</button>
+          <span class="question-count-badge" id="tb-count">0 QUESTIONS</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTROL TAB -->
+  <div class="tab-panel" id="tab-control">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+      <div class="card">
+        <div class="section-title">ROUND MANAGEMENT</div>
+        <div class="round-controls">
+          <div class="round-status-bar">
+            <div class="round-label">CURRENT PHASE</div>
+            <div class="round-value" id="ctrl-phase">PRE-EVENT</div>
+          </div>
+          <div class="timer-display" id="ctrl-timer">--:--</div>
+          <button class="btn success" id="btn-start-r1" onclick="startRound(1)">START ROUND 1</button>
+          <button class="btn" id="btn-end-r1" onclick="endRound(1)" disabled>END ROUND 1 EARLY</button>
+          <div class="divider"></div>
+          <div class="section-title">ADVANCE TEAMS TO ROUND 2</div>
+          <div id="advance-checks-r2"></div>
+          <button class="btn orange" id="btn-start-r2" onclick="startRound(2)" disabled>START ROUND 2</button>
+          <button class="btn" id="btn-end-r2" onclick="endRound(2)" disabled>END ROUND 2 EARLY</button>
+          <div class="divider"></div>
+          <div class="section-title">TIE-BREAKER (if needed)</div>
+          <div id="advance-checks-tb"></div>
+          <button class="btn orange" id="btn-start-tb" onclick="startTiebreaker()" disabled>START TIE-BREAKER</button>
+          <button class="btn" id="btn-end-tb" onclick="endTiebreaker()" disabled>END TIE-BREAKER</button>
+          <div class="divider"></div>
+          <button class="btn success" id="btn-show-results" onclick="showFinalResults()" disabled>ANNOUNCE FINAL RESULTS</button>
+          <div class="divider"></div>
+          <button class="btn danger" onclick="resetEvent()">&#9888; RESET ENTIRE EVENT</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">TEAM OVERRIDES</div>
+        <div id="team-overrides" class="scrollable"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEADERBOARD TAB -->
+  <div class="tab-panel" id="tab-leaderboard">
+    <div class="card">
+      <div class="section-title">LIVE LEADERBOARD</div>
+      <div id="admin-lb"></div>
+    </div>
+  </div>
+
+  <!-- RESULTS TAB -->
+  <div class="tab-panel" id="tab-results">
+    <div class="card">
+      <div class="section-title">FINAL RESULTS</div>
+      <div id="final-results-admin"></div>
+      <div style="margin-top:20px;">
+        <button class="btn success" onclick="exportPDF()">DOWNLOAD RESULTS PDF</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- RESULTS SCREEN (for teams) -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="screen" id="results">
+  <div class="results-title">🏆 FINAL RESULTS</div>
+  <div class="podium" id="podium"></div>
+  <table class="results-table">
+    <thead>
+      <tr>
+        <th>RANK</th>
+        <th>TEAM</th>
+        <th>ROUNDS COMPLETED</th>
+        <th>TOTAL TIME</th>
+      </tr>
+    </thead>
+    <tbody id="results-tbody"></tbody>
+  </table>
+</div>
+
+</div><!-- .page -->
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+const STATE = {
+  teams: {},         // { teamName: { password, round1: {...}, round2: {...}, tb: {...}, status } }
+  qBanks: { r1: [], r2: [], tb: [] },
+  phase: 'pre',      // pre | r1 | r1-end | r2 | r2-end | tb | finished
+  roundStart: null,
+  roundEnd: null,
+  timerInterval: null,
+  leaderboardInterval: null,
+  currentTeam: null,
+  isAdmin: false,
+  eventName: 'Debug Quest',
+
+  // Per-team game state (stored in each team's record)
+  // team.r1 = { questions: [], currentQ: 0, wrongStreak: 0, totalAttempts: 0, startTime, finishTime, hintShown: false }
+};
+
+const ADMIN_USER = 'admin';
+const ADMIN_PASS = 'admin2024'; // Change as needed
+const ROUND_DURATION = 30 * 60 * 1000; // 30 minutes
+
+// ─── FIREBASE CONFIG ────────────────────────────────────────────
+// 1. Go to https://console.firebase.google.com
+// 2. Create a project → Add a web app → copy the config below
+// 3. In the project: Build → Realtime Database → Create database
+//    Choose "Start in test mode" (allows read/write without login)
+const FIREBASE_CONFIG = {
+  apiKey:      'AIzaSyA7FeMBqdGnsvnVgsYcFGW7TXCpU1XwjuU',
+  authDomain:  'digital-treasure-hunt-2b91e.firebaseapp.com',
+  databaseURL: 'https://digital-treasure-hunt-2b91e-default-rtdb.asia-southeast1.firebasedatabase.app/',
+  projectId:   'digital-treasure-hunt-2b91e',
+};
+// ────────────────────────────────────────────────────────────────
+
+let db = null;
+
+function initFirebase() {
+  if (FIREBASE_CONFIG.apiKey.includes('PASTE_YOUR')) return false;
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.database();
+    db.ref('.info/connected').on('value', snap => {
+      const banner = document.getElementById('offline-banner');
+      if (banner) {
+        if (snap.val() === false) banner.classList.add('show');
+        else banner.classList.remove('show');
+      }
+    });
+    return true;
+  } catch(e) { console.error('Firebase init failed:', e); return false; }
+}
+
+function updateEventName() {
+  const name = STATE.eventName || 'Debug Quest';
+  const logo = document.getElementById('landing-logo');
+  if (logo) logo.textContent = name.toUpperCase();
+  document.title = name + ' — Treasure Hunt';
+}
+
+function saveEventName() {
+  const input = document.getElementById('event-name-input');
+  STATE.eventName = (input ? input.value.trim() : '') || 'Debug Quest';
+  updateEventName();
+  saveState();
+  notify('Event name updated.', 'success');
+}
+
+// Write the full game state to Firebase (admin operations)
+function saveState() {
+  if (!db) return;
+  db.ref('gameState').set({
+    phase:      STATE.phase,
+    roundStart: STATE.roundStart,
+    roundEnd:   STATE.roundEnd,
+    teams:      STATE.teams,
+    qBanks:     STATE.qBanks,
+    eventName:  STATE.eventName
+  }).then(() => {
+    console.log('State saved.');
+  }).catch(e => {
+    console.error('Firebase write error:', e);
+    notify('\u26a0 Database save failed: ' + e.message + ' — check Firebase rules are in test mode.', 'error');
+  });
+}
+
+// Write only this team's record to Firebase (team answer submissions)
+function saveTeamProgress() {
+  if (!db || !STATE.currentTeam) return;
+  db.ref('gameState/teams/' + STATE.currentTeam)
+    .set(STATE.teams[STATE.currentTeam])
+    .catch(e => console.error('Firebase write error:', e));
+}
+
+// Real-time listener — fires on every remote change and updates all clients
+function setupRealtimeSync() {
+  if (!db) return;
+  db.ref('gameState').on('value', snapshot => {
+    const data = snapshot.val();
+    if (!data) return;
+
+    const prevPhase = STATE.phase;
+    STATE.phase      = data.phase      ?? 'pre';
+    STATE.roundStart = data.roundStart ?? null;
+    STATE.roundEnd   = data.roundEnd   ?? null;
+    STATE.teams      = data.teams      ?? {};
+    STATE.eventName  = data.eventName  ?? 'Debug Quest';
+    updateEventName();
+    // Firebase stores empty arrays as null — restore them properly
+    const qb = data.qBanks ?? {};
+    STATE.qBanks = {
+      r1: Array.isArray(qb.r1) ? qb.r1 : [],
+      r2: Array.isArray(qb.r2) ? qb.r2 : [],
+      tb: Array.isArray(qb.tb) ? qb.tb : [],
+    };
+
+    if (STATE.isAdmin) {
+      refreshAdminUI();
+      updateQCounts();
+    } else if (STATE.currentTeam && STATE.teams[STATE.currentTeam]) {
+      if (STATE.phase !== prevPhase) {
+        routeTeam();
+      } else {
+        renderSidebarLB();
+        if (document.getElementById('waiting').classList.contains('active')) renderWaitingLeaderboard();
+        updateTimerDisplay();
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SCREEN MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function showLogin(type) {
+  STATE.loginType = type;
+  document.getElementById('login-title').textContent = type === 'admin' ? 'ADMIN LOGIN' : 'TEAM LOGIN';
+  document.getElementById('login-desc').textContent = type === 'admin'
+    ? 'Administrator access.' : 'Enter your team credentials to begin.';
+  document.getElementById('login-error').style.display = 'none';
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+  showScreen('login');
+}
+
+function doLogin() {
+  const user = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value.trim();
+  const err = document.getElementById('login-error');
+
+  if (STATE.loginType === 'admin') {
+    if (user === ADMIN_USER && pass === ADMIN_PASS) {
+      STATE.isAdmin = true;
+      STATE.currentTeam = null;
+      showScreen('admin');
+      refreshAdminUI();
+      startLeaderboardRefresh();
+    } else {
+      err.style.display = 'block';
+      err.textContent = 'Invalid admin credentials.';
+    }
+  } else {
+    err.style.color = 'var(--accent)';
+    err.style.display = 'block';
+    err.textContent = 'Checking credentials...';
+
+    const checkLogin = (teamsData) => {
+      err.style.color = 'var(--danger)';
+      // Find team: exact match first, then case-insensitive fallback
+      const userLower = user.toLowerCase();
+      let matchedKey = Object.keys(teamsData).find(k => k === user)
+                    || Object.keys(teamsData).find(k => k.toLowerCase() === userLower);
+      const team = matchedKey ? teamsData[matchedKey] : null;
+      console.log('Login attempt:', user, '| Found key:', matchedKey, '| Teams available:', Object.keys(teamsData));
+      if (team && team.password === pass) {
+        STATE.currentTeam = matchedKey; // use exact stored key
+        STATE.isAdmin = false;
+        err.style.display = 'none';
+        routeTeam();
+      } else if (team) {
+        err.style.display = 'block';
+        err.textContent = 'Incorrect password.';
+      } else {
+        err.style.display = 'block';
+        err.textContent = 'Team not found. Check the name and try again.';
+      }
+    };
+
+    if (db) {
+      // Read only the teams node — much smaller and faster than the full gameState
+      db.ref('gameState/teams').once('value', snapshot => {
+        const teamsData = snapshot.val() ?? {};
+        STATE.teams = teamsData;
+        checkLogin(teamsData);
+      }).catch(e => {
+        console.error('Firebase team read error:', e);
+        checkLogin(STATE.teams); // fall back to in-memory state
+      });
+    } else {
+      checkLogin();
+    }
+  }
+}
+
+// Handle Enter key on login
+document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('login-user').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+function adminLogout() {
+  STATE.isAdmin = false;
+  clearInterval(STATE.leaderboardInterval);
+  showScreen('landing');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TEAM ROUTING
+// ═══════════════════════════════════════════════════════════════
+function routeTeam() {
+  const team = STATE.teams[STATE.currentTeam];
+  const phase = STATE.phase;
+
+  if (phase === 'pre') {
+    showWaiting('WAITING FOR EVENT TO START', 'The admin will start Round 1 shortly. Stay ready!');
+  } else if (phase === 'r1') {
+    if (!team.r1Enabled) {
+      showWaiting('NOT PARTICIPATING IN ROUND 1', 'You have not been assigned to this round.', 'eliminated');
+      return;
+    }
+    if (team.r1?.finished) {
+      showWaiting('ROUND 1 COMPLETE', `You completed ${team.r1.currentQ} questions. Awaiting results.`);
+    } else {
+      startGameForTeam('r1');
+    }
+  } else if (phase === 'r1-end') {
+    showWaiting('ROUND 1 ENDED', 'Waiting for admin to announce rankings and start Round 2.');
+  } else if (phase === 'r2') {
+    if (!team.r2Enabled) {
+      showWaiting('YOU DID NOT ADVANCE', 'Thank you for participating! You did not advance to Round 2.', 'eliminated');
+      return;
+    }
+    if (team.r2?.finished) {
+      showWaiting('ROUND 2 COMPLETE', `You completed ${team.r2.currentQ} questions. Awaiting results.`);
+    } else {
+      startGameForTeam('r2');
+    }
+  } else if (phase === 'r2-end') {
+    showWaiting('ROUND 2 ENDED', 'Waiting for admin to announce final results.');
+  } else if (phase === 'tb') {
+    if (!team.tbEnabled) {
+      showWaiting('NOT IN TIE-BREAKER', 'You are not part of the tie-breaker round.', 'eliminated');
+      return;
+    }
+    if (team.tb?.finished) {
+      showWaiting('TIE-BREAKER COMPLETE', 'Awaiting final results.');
+    } else {
+      startGameForTeam('tb');
+    }
+  } else if (phase === 'finished') {
+    showTeamResults();
+  }
+}
+
+function showWaiting(title, msg, type = 'waiting') {
+  document.getElementById('waiting-title').textContent = title;
+  document.getElementById('waiting-msg').textContent = msg;
+  const icon = document.getElementById('waiting-icon');
+  const dots = document.getElementById('waiting-dots');
+  if (type === 'eliminated') {
+    if (icon) { icon.textContent = '✗'; icon.style.color = 'var(--danger)'; }
+    if (dots) dots.style.display = 'none';
+  } else {
+    if (icon) { icon.textContent = '⚙'; icon.style.color = ''; }
+    if (dots) dots.style.display = 'flex';
+  }
+  showScreen('waiting');
+  renderWaitingLeaderboard();
+  // Keep timer and leaderboard UI refreshing while on the waiting screen
+  if (!STATE.isAdmin && STATE.currentTeam) startLeaderboardRefresh();
+}
+
+function renderWaitingLeaderboard() {
+  const container = document.getElementById('waiting-leaderboard');
+  const phase = STATE.phase;
+  const roundKey = phase === 'r2' || phase === 'r2-end' ? 'r2' : phase === 'tb' ? 'tb' : 'r1';
+  const sorted = getSortedLeaderboard(roundKey);
+  if (!sorted.length) { container.innerHTML = ''; return; }
+
+  let html = `<div class="section-title" style="margin-top:24px;">// LIVE LEADERBOARD</div>`;
+  sorted.forEach((item, i) => {
+    const me = item.name === STATE.currentTeam;
+    html += `
+      <div class="lb-row rank-${i+1}" style="${me ? 'border-color:var(--accent);' : ''}">
+        <div class="lb-rank">#${i+1}</div>
+        <div class="lb-name">${item.name}${me ? ' <span class="my-team-badge">YOU</span>' : ''}</div>
+        <div class="lb-progress">Q${item.q}/${item.total}</div>
+        <div class="lb-time">${formatTime(item.elapsed)}</div>
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TEAM MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+function addTeam() {
+  const name = document.getElementById('new-team-name').value.trim();
+  const pass = document.getElementById('new-team-pass').value.trim();
+  if (!name || !pass) { notify('Enter team name and password.', 'error'); return; }
+  if (STATE.teams[name]) { notify('Team already exists.', 'error'); return; }
+
+  STATE.teams[name] = { password: pass, r1Enabled: true, r2Enabled: false, tbEnabled: false };
+  document.getElementById('new-team-name').value = '';
+  document.getElementById('new-team-pass').value = '';
+  notify(`Team "${name}" added.`, 'success');
+  saveState();
+  renderTeamList();
+  renderAdvanceChecks();
+  renderOverrides();
+}
+
+function removeTeam(name) {
+  if (!confirm(`Remove team "${name}"?`)) return;
+  delete STATE.teams[name];
+  saveState();
+  renderTeamList();
+  renderAdvanceChecks();
+  renderOverrides();
+}
+
+function renderTeamList() {
+  const el = document.getElementById('team-list');
+  const names = Object.keys(STATE.teams);
+  if (!names.length) { el.innerHTML = '<div style="color:var(--text-dim);font-size:0.85rem;padding:12px;">No teams yet.</div>'; return; }
+
+  el.innerHTML = names.map(n => {
+    const t = STATE.teams[n];
+    const phase = STATE.phase;
+    let status = '—';
+    const rk = phase === 'r2' || phase === 'r2-end' ? 'r2' : phase === 'tb' ? 'tb' : 'r1';
+    if (t[rk]) {
+      status = t[rk].finished ? `✓ Done (Q${t[rk].currentQ}/${t[rk].questions?.length||15})` : `Q${t[rk].currentQ + 1}`;
+    }
+    return `
+      <div class="team-row">
+        <div>
+          <div class="team-name-label">${n}</div>
+          <div class="team-status">Pass: ${t.password} | Status: ${status}</div>
+        </div>
+        <div class="team-actions">
+          <button class="btn danger" style="padding:6px 14px;font-size:0.6rem;" onclick="removeTeam('${n}')">REMOVE</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// QUESTION BANKS
+// ═══════════════════════════════════════════════════════════════
+function saveQuestionBank(bank) {
+  const el = document.getElementById(`q-bank-${bank}`);
+  try {
+    const arr = JSON.parse(el.value.trim());
+    if (!Array.isArray(arr)) throw new Error('Not an array');
+    STATE.qBanks[bank] = arr;
+    saveState();
+    notify(`${bank.toUpperCase()} bank saved: ${arr.length} questions.`, 'success');
+    document.getElementById(`${bank}-count`).textContent = `${arr.length} QUESTIONS`;
+  } catch(e) {
+    notify('Invalid JSON format. Check your question bank.', 'error');
+  }
+}
+
+function loadSampleQuestions(bank) {
+  const samples = {
+    r1: JSON.stringify([
+      {"q":"What is the output of: print(2 ** 3)?","a":"8","hint":"** is the power operator in Python","exact":true,"code":"print(2 ** 3)"},
+      {"q":"What keyword is used to define a function in Python?","a":"def","hint":"It's a 3-letter keyword","exact":false},
+      {"q":"What does HTML stand for?","a":"HyperText Markup Language","hint":"It's the backbone of web pages","exact":false},
+      {"q":"What is the output?","a":"5","hint":"len() counts items","exact":true,"code":"x = [1,2,3,4,5]\nprint(len(x))"},
+      {"q":"Which data structure uses LIFO order?","a":"stack","hint":"Think of a stack of plates","exact":false},
+      {"q":"What symbol is used for single-line comments in Python?","a":"#","hint":"It's a hash/pound symbol","exact":true},
+      {"q":"What does CSS stand for?","a":"Cascading Style Sheets","hint":"It styles HTML pages","exact":false},
+      {"q":"What is the output?","a":"True","hint":"isinstance checks type","exact":true,"code":"print(isinstance(5, int))"},
+      {"q":"What is the time complexity of binary search?","a":"O(log n)","hint":"It halves the search space each time","exact":false},
+      {"q":"What does SQL stand for?","a":"Structured Query Language","hint":"Used for databases","exact":false},
+      {"q":"What is the output?","a":"Hello World","hint":"+ concatenates strings","exact":true,"code":"a = 'Hello'\nb = ' World'\nprint(a + b)"},
+      {"q":"What keyword exits a loop early in Python?","a":"break","hint":"5 letters, starts with b","exact":false},
+      {"q":"What is the output?","a":"[1, 4, 9]","hint":"List comprehension with squaring","exact":true,"code":"print([x**2 for x in [1,2,3]])"},
+      {"q":"In OOP, what is the process of hiding data called?","a":"encapsulation","hint":"Wrapping data and methods together","exact":false},
+      {"q":"What does API stand for?","a":"Application Programming Interface","hint":"Used for communication between software","exact":false},
+      {"q":"What is the output?","a":"0","hint":"Modulo returns remainder","exact":true,"code":"print(10 % 5)"},
+      {"q":"Which sorting algorithm has O(n log n) average complexity?","a":"merge sort","hint":"It divides and conquers","exact":false},
+      {"q":"What is a Python dictionary's key requirement?","a":"immutable","hint":"Lists can't be keys, strings can","exact":false},
+      {"q":"What is the output?","a":"3","hint":"Integer division floors the result","exact":true,"code":"print(7 // 2)"},
+      {"q":"What does the 'git clone' command do?","a":"copies a repository","hint":"Creates a local copy of a remote repo","exact":false},
+      {"q":"What is the output?","a":"False","hint":"not inverts a boolean","exact":true,"code":"print(not True)"},
+      {"q":"What is recursion?","a":"a function that calls itself","hint":"It has a base case and recursive case","exact":false},
+      {"q":"What is the output?","a":"5","hint":"abs returns absolute value","exact":true,"code":"print(abs(-5))"},
+      {"q":"What data type stores True or False?","a":"boolean","hint":"Named after George Boole","exact":false},
+      {"q":"What does RAM stand for?","a":"Random Access Memory","hint":"Temporary fast storage in a computer","exact":false},
+      {"q":"What is the output?","a":"['a', 'b', 'c']","hint":"split splits a string","exact":true,"code":"print('a,b,c'.split(','))"},
+      {"q":"In Python, what does 'pass' do?","a":"does nothing","hint":"It's a placeholder statement","exact":false},
+      {"q":"What is the output?","a":"10","hint":"max returns the largest value","exact":true,"code":"print(max([3,7,10,1]))"},
+      {"q":"What is a compiler?","a":"translates source code to machine code","hint":"It converts high-level language to binary","exact":false},
+      {"q":"What is the output?","a":"HELLO","hint":"upper() converts to uppercase","exact":true,"code":"print('hello'.upper())"}
+    ], null, 2),
+    r2: JSON.stringify([
+      {"q":"What is a deadlock in OS?","a":"processes waiting for each other indefinitely","hint":"Circular dependency between processes","exact":false},
+      {"q":"What is the output?","a":"[2, 3]","hint":"Slicing includes start, excludes end","exact":true,"code":"x = [1,2,3,4]\nprint(x[1:3])"},
+      {"q":"What does DRY stand for in programming?","a":"Don't Repeat Yourself","hint":"A principle to reduce code duplication","exact":false},
+      {"q":"What is the output?","a":"{'a': 1, 'b': 2}","hint":"dict() can take keyword args","exact":true,"code":"print(dict(a=1, b=2))"},
+      {"q":"What is polymorphism?","a":"same interface, different implementations","hint":"One method behaves differently by class","exact":false},
+      {"q":"What is the output?","a":"True","hint":"all() returns True if all are truthy","exact":true,"code":"print(all([1,2,3]))"},
+      {"q":"What is a foreign key in SQL?","a":"references a primary key in another table","hint":"Used to link two tables","exact":false},
+      {"q":"What is the output?","a":"4","hint":"Strings are 0-indexed","exact":true,"code":"s = 'Hello'\nprint(len(s) - 1)"},
+      {"q":"What is the difference between TCP and UDP?","a":"TCP is reliable, UDP is faster but unreliable","hint":"One checks delivery, the other doesn't","exact":false},
+      {"q":"What is the output?","a":"None","hint":"Functions without return give None","exact":true,"code":"def f(): pass\nprint(f())"},
+      {"q":"What does JSON stand for?","a":"JavaScript Object Notation","hint":"Common data format for APIs","exact":false},
+      {"q":"What is the output?","a":"True","hint":"in checks membership","exact":true,"code":"print(3 in [1,2,3,4])"},
+      {"q":"What is Big O notation used for?","a":"describing algorithm complexity","hint":"Measures time or space efficiency","exact":false},
+      {"q":"What is the output?","a":"6","hint":"sum() adds all elements","exact":true,"code":"print(sum([1,2,3]))"},
+      {"q":"What is a virtual machine?","a":"software that emulates a computer","hint":"Runs OS inside another OS","exact":false},
+      {"q":"What is the output?","a":"True","hint":"== checks value equality","exact":true,"code":"print(1 == 1.0)"},
+      {"q":"What is the purpose of a constructor?","a":"initializes object attributes","hint":"Called when an object is created","exact":false},
+      {"q":"What is the output?","a":"[1, 2, 3, 4, 5]","hint":"range generates numbers","exact":true,"code":"print(list(range(1,6)))"},
+      {"q":"What is the OSI model?","a":"7-layer network communication model","hint":"Physical, Data Link, Network...","exact":false},
+      {"q":"What is the output?","a":"9","hint":"enumerate gives index-value pairs","exact":true,"code":"lst = [7,8,9]\nprint(lst[-1])"},
+      {"q":"What is inheritance in OOP?","a":"child class acquires parent class properties","hint":"Extends existing functionality","exact":false},
+      {"q":"What is the output?","a":"True","hint":"and returns True only if both are True","exact":true,"code":"print(True and True)"},
+      {"q":"What is a hash collision?","a":"two inputs produce the same hash","hint":"Happens in hash tables","exact":false},
+      {"q":"What is the output?","a":"2","hint":"Negative index counts from end","exact":true,"code":"print([1,2,3][-2])"},
+      {"q":"What does HTTPS add over HTTP?","a":"encryption and security","hint":"The S stands for Secure","exact":false},
+      {"q":"What is the output?","a":"False","hint":"or returns False only if both are False","exact":true,"code":"print(False or False)"},
+      {"q":"What is a stack overflow?","a":"stack exceeds its memory limit","hint":"Often caused by infinite recursion","exact":false},
+      {"q":"What is the output?","a":"dict","hint":"type() returns the type","exact":true,"code":"print(type({}).__name__)"},
+      {"q":"What is the purpose of indexing in databases?","a":"speeds up data retrieval","hint":"Like a book index","exact":false},
+      {"q":"What is the output?","a":"True","hint":"startswith checks prefix","exact":true,"code":"print('Python'.startswith('Py'))"}
+    ], null, 2),
+    tb: JSON.stringify([
+      {"q":"What is the output?","a":"[0, 1, 4, 9, 16]","hint":"List comprehension squaring range(5)","exact":true,"code":"print([x**2 for x in range(5)])"},
+      {"q":"What design pattern ensures only one instance of a class exists?","a":"singleton","hint":"The name hints at singularity","exact":false},
+      {"q":"What is the output?","a":"True","hint":"Checks if string has only digits","exact":true,"code":"print('123'.isdigit())"}
+    ], null, 2)
+  };
+  document.getElementById(`q-bank-${bank}`).value = samples[bank] || '[]';
+  saveQuestionBank(bank);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROUND CONTROL
+// ═══════════════════════════════════════════════════════════════
+function startRound(round) {
+  const teamNames = Object.keys(STATE.teams);
+  if (!teamNames.length) { notify('Add teams first!', 'error'); return; }
+
+  const bank = round === 1 ? 'r1' : 'r2';
+  if (STATE.qBanks[bank].length < 15) {
+    notify(`Need at least 15 questions in Round ${round} bank!`, 'error');
+    return;
+  }
+
+  STATE.phase = `r${round}`;
+  STATE.roundStart = Date.now();
+  STATE.roundEnd = STATE.roundStart + ROUND_DURATION;
+
+  // Assign questions to eligible teams
+  teamNames.forEach(name => {
+    const team = STATE.teams[name];
+    const enabled = round === 1 ? team.r1Enabled : team.r2Enabled;
+    if (!enabled) return;
+    const rk = `r${round}`;
+    if (!team[rk]) {
+      team[rk] = {
+        questions: shufflePick(STATE.qBanks[bank], 15),
+        currentQ: 0,
+        wrongStreak: 0,
+        totalAttempts: 0,
+        startTime: Date.now(),
+        finishTime: null,
+        finished: false,
+        hintShown: false
+      };
+    }
+  });
+
+  document.getElementById('btn-start-r1').disabled = true;
+  document.getElementById(`btn-end-r${round}`).disabled = false;
+  document.getElementById('ctrl-phase').textContent = `ROUND ${round} ACTIVE`;
+  document.getElementById('admin-round-badge').textContent = `ROUND ${round}`;
+
+  saveState();
+  startAdminTimer();
+  refreshAdminUI();
+  notify(`Round ${round} started!`, 'success');
+
+  // Route any logged-in team
+  if (STATE.currentTeam) routeTeam();
+}
+
+function endRound(round) {
+  STATE.phase = `r${round}-end`;
+  clearInterval(STATE.timerInterval);
+  document.getElementById(`btn-end-r${round}`).disabled = true;
+  document.getElementById('ctrl-phase').textContent = `ROUND ${round} ENDED`;
+
+  if (round === 1) {
+    document.getElementById('btn-start-r2').disabled = false;
+    renderAdvanceChecks();
+  } else {
+    document.getElementById('btn-start-tb').disabled = false;
+    document.getElementById('btn-show-results').disabled = false;
+    renderAdvanceChecksTB();
+  }
+
+  saveState();
+  notify(`Round ${round} ended. Select teams to advance.`, 'warning');
+  if (STATE.currentTeam) routeTeam();
+}
+
+function startTiebreaker() {
+  if (STATE.qBanks.tb.length < 3) { notify('Need 3 tie-breaker questions!', 'error'); return; }
+
+  STATE.phase = 'tb';
+  STATE.roundStart = Date.now();
+  STATE.roundEnd = STATE.roundStart + ROUND_DURATION;
+
+  Object.keys(STATE.teams).forEach(name => {
+    const team = STATE.teams[name];
+    if (!team.tbEnabled) return;
+    team.tb = {
+      questions: STATE.qBanks.tb.slice(0, 3),
+      currentQ: 0,
+      wrongStreak: 0,
+      totalAttempts: 0,
+      startTime: Date.now(),
+      finishTime: null,
+      finished: false,
+      hintShown: false
+    };
+  });
+
+  document.getElementById('btn-start-tb').disabled = true;
+  document.getElementById('btn-end-tb').disabled = false;
+  document.getElementById('ctrl-phase').textContent = 'TIE-BREAKER ACTIVE';
+  saveState();
+  startAdminTimer();
+  refreshAdminUI();
+  notify('Tie-breaker started!', 'success');
+  if (STATE.currentTeam) routeTeam();
+}
+
+function endTiebreaker() {
+  STATE.phase = 'finished';
+  clearInterval(STATE.timerInterval);
+  document.getElementById('btn-end-tb').disabled = true;
+  document.getElementById('btn-show-results').disabled = false;
+  saveState();
+  notify('Tie-breaker ended!', 'warning');
+  if (STATE.currentTeam) routeTeam();
+}
+
+function showFinalResults() {
+  STATE.phase = 'finished';
+  saveState();
+  renderFinalResultsAdmin();
+  notify('Final results announced!', 'success');
+  if (STATE.currentTeam) showTeamResults();
+}
+
+function resetEvent() {
+  if (!confirm('RESET ENTIRE EVENT?\n\nThis will:\n\u2022 Clear all team progress\n\u2022 Reset the phase to Pre-Event\n\u2022 Keep teams and question banks intact\n\nThis cannot be undone.')) return;
+
+  // Wipe per-round data from every team but keep name/password/enabled flags
+  Object.keys(STATE.teams).forEach(name => {
+    const t = STATE.teams[name];
+    STATE.teams[name] = {
+      password:   t.password,
+      r1Enabled:  true,
+      r2Enabled:  false,
+      tbEnabled:  false
+    };
+  });
+
+  STATE.phase      = 'pre';
+  STATE.roundStart = null;
+  STATE.roundEnd   = null;
+  clearInterval(STATE.timerInterval);
+
+  // Reset all control buttons
+  document.getElementById('btn-start-r1').disabled  = false;
+  document.getElementById('btn-end-r1').disabled    = true;
+  document.getElementById('btn-start-r2').disabled  = true;
+  document.getElementById('btn-end-r2').disabled    = true;
+  document.getElementById('btn-start-tb').disabled  = true;
+  document.getElementById('btn-end-tb').disabled    = true;
+  document.getElementById('btn-show-results').disabled = true;
+  document.getElementById('ctrl-phase').textContent = 'PRE-EVENT';
+  document.getElementById('ctrl-timer').textContent = '--:--';
+  document.getElementById('admin-round-badge').textContent = 'PRE-EVENT';
+
+  saveState();
+  refreshAdminUI();
+  notify('Event has been reset. All team progress cleared.', 'warning');
+}
+
+function startAdminTimer() {
+  clearInterval(STATE.timerInterval);
+  STATE.timerInterval = setInterval(() => {
+    const remaining = Math.max(0, STATE.roundEnd - Date.now());
+    const el = document.getElementById('ctrl-timer');
+    const ge = document.getElementById('game-timer');
+    const timeStr = formatMs(remaining);
+    if (el) el.textContent = timeStr;
+    if (ge) ge.textContent = timeStr;
+
+    if (remaining < 300000) {
+      if (el) el.classList.add('danger-time');
+      if (ge) ge.classList.add('danger');
+    }
+
+    if (remaining === 0) {
+      clearInterval(STATE.timerInterval);
+      if (!STATE.isAdmin) return; // only admin auto-ends rounds
+      const phase = STATE.phase;
+      if (phase === 'r1') endRound(1);
+      else if (phase === 'r2') endRound(2);
+      else if (phase === 'tb') endTiebreaker();
+    }
+  }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ADVANCE CHECKS
+// ═══════════════════════════════════════════════════════════════
+function renderAdvanceChecks() {
+  // For R1 -> R2
+  const container = document.getElementById('advance-checks-r2');
+  const teamNames = Object.keys(STATE.teams).filter(n => STATE.teams[n].r1Enabled);
+  container.innerHTML = teamNames.map(n => `
+    <div class="advance-check">
+      <input type="checkbox" id="adv-r2-${n}" onchange="toggleAdvance('r2','${n}',this.checked)" ${STATE.teams[n].r2Enabled ? 'checked' : ''}>
+      <label for="adv-r2-${n}">${n}</label>
+    </div>`).join('');
+}
+
+function renderAdvanceChecksTB() {
+  const container = document.getElementById('advance-checks-tb');
+  const teamNames = Object.keys(STATE.teams).filter(n => STATE.teams[n].r2Enabled);
+  container.innerHTML = teamNames.map(n => `
+    <div class="advance-check">
+      <input type="checkbox" id="adv-tb-${n}" onchange="toggleAdvance('tb','${n}',this.checked)" ${STATE.teams[n].tbEnabled ? 'checked' : ''}>
+      <label for="adv-tb-${n}">${n}</label>
+    </div>`).join('');
+}
+
+function toggleAdvance(round, teamName, checked) {
+  if (round === 'r2') STATE.teams[teamName].r2Enabled = checked;
+  if (round === 'tb') STATE.teams[teamName].tbEnabled = checked;
+  saveState();
+}
+
+function renderOverrides() {
+  const container = document.getElementById('team-overrides');
+  const names = Object.keys(STATE.teams);
+  if (!names.length) { container.innerHTML = '<div style="color:var(--text-dim);font-size:0.85rem;">No teams.</div>'; return; }
+
+  const phase = STATE.phase;
+  const rk = phase === 'r2' || phase === 'r2-end' ? 'r2' : phase === 'tb' ? 'tb' : 'r1';
+
+  container.innerHTML = names.map(n => {
+    const t = STATE.teams[n];
+    const rd = t[rk];
+    const q = rd ? rd.currentQ : 0;
+    const total = rd?.questions?.length || 15;
+    return `
+      <div class="team-row">
+        <div>
+          <div class="team-name-label">${n}</div>
+          <div class="team-status">Q${q}/${total} | ${rd?.finished ? 'DONE' : 'IN PROGRESS'}</div>
+        </div>
+        <button class="btn orange" style="padding:6px 12px;font-size:0.6rem;" onclick="unlockTeam('${n}')">UNLOCK Q</button>
+      </div>`;
+  }).join('');
+}
+
+function unlockTeam(name) {
+  const phase = STATE.phase;
+  const rk = phase === 'r2' ? 'r2' : phase === 'tb' ? 'tb' : 'r1';
+  const team = STATE.teams[name];
+  if (!team[rk]) { notify('Team has not started yet.', 'error'); return; }
+  const next = team[rk].currentQ + 1;
+  if (next >= team[rk].questions.length) { notify('Team is already at last question.', 'warning'); return; }
+  team[rk].currentQ = next;
+  team[rk].wrongStreak = 0;
+  team[rk].hintShown = false;
+  saveState();
+  notify(`${name} advanced to Q${next + 1}.`, 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GAME PLAY
+// ═══════════════════════════════════════════════════════════════
+function getRoundKey() {
+  const p = STATE.phase;
+  if (p === 'r2') return 'r2';
+  if (p === 'tb') return 'tb';
+  return 'r1';
+}
+
+function startGameForTeam(rk) {
+  showScreen('game');
+  document.getElementById('game-team-name').textContent = STATE.currentTeam.toUpperCase();
+  document.getElementById('game-round-badge').textContent =
+    rk === 'tb' ? 'TIE-BREAKER' : rk === 'r2' ? 'ROUND 2' : 'ROUND 1';
+  document.getElementById('tb-indicator').style.display = rk === 'tb' ? 'block' : 'none';
+
+  renderQuestion();
+  updateTimerDisplay();
+  startLeaderboardRefresh();
+
+  // Resume any active penalty from before a reload
+  const team = STATE.teams[STATE.currentTeam];
+  if (team && team.penaltyUntil) {
+    const secsLeft = Math.ceil((team.penaltyUntil - Date.now()) / 1000);
+    if (secsLeft > 0) {
+      startPenalty(secsLeft);
+    } else {
+      // Penalty already expired — clean it up
+      if (db && STATE.currentTeam) {
+        db.ref('gameState/teams/' + STATE.currentTeam + '/penaltyUntil').remove();
+      }
+    }
+  }
+
+  // Prevent tab switch
+  setupAntiCheat();
+}
+
+function renderQuestion() {
+  const rk = getRoundKey();
+  const team = STATE.teams[STATE.currentTeam];
+  const rd = team[rk];
+  const q = rd.questions[rd.currentQ];
+  const total = rd.questions.length;
+
+  // Meta
+  document.getElementById('q-number').textContent = `QUESTION ${rd.currentQ + 1} / ${total}`;
+
+  // Dots
+  const dotsEl = document.getElementById('q-dots');
+  dotsEl.innerHTML = rd.questions.map((_, i) => {
+    let cls = i < rd.currentQ ? 'done' : i === rd.currentQ ? 'current' : '';
+    return `<div class="q-dot ${cls}"></div>`;
+  }).join('');
+
+  // Question text
+  document.getElementById('question-text').textContent = q.q;
+
+  // Code block
+  const codeEl = document.getElementById('code-block');
+  if (q.code) {
+    codeEl.textContent = q.code;
+    codeEl.style.display = 'block';
+  } else {
+    codeEl.style.display = 'none';
+  }
+
+  // Hint
+  const hintBox = document.getElementById('hint-box');
+  if (rd.hintShown && q.hint) {
+    document.getElementById('hint-text').textContent = q.hint;
+    hintBox.classList.add('visible');
+  } else {
+    hintBox.classList.remove('visible');
+  }
+
+  // Reset answer input
+  const inp = document.getElementById('answer-input');
+  inp.value = '';
+  inp.className = 'answer-input';
+  document.getElementById('answer-feedback').textContent = '';
+  document.getElementById('answer-feedback').className = 'answer-feedback';
+  document.getElementById('attempts-num').textContent = rd.totalAttempts;
+  document.getElementById('streak-num').textContent = rd.wrongStreak;
+  inp.focus();
+}
+
+document.getElementById('answer-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitAnswer();
+});
+
+function submitAnswer() {
+  const rk = getRoundKey();
+  const team = STATE.teams[STATE.currentTeam];
+  const rd = team[rk];
+  if (rd.finished) return;
+
+  const q = rd.questions[rd.currentQ];
+  const raw = document.getElementById('answer-input').value;
+  const inp = document.getElementById('answer-input');
+  const feedback = document.getElementById('answer-feedback');
+
+  rd.totalAttempts++;
+
+  const correct = checkAnswer(raw, q.a, q.exact);
+
+  if (correct) {
+    inp.classList.remove('wrong');
+    inp.classList.add('correct');
+    feedback.textContent = '✓ CORRECT! Moving to next question...';
+    feedback.className = 'answer-feedback correct';
+    rd.wrongStreak = 0;
+    rd.hintShown = false;
+
+    setTimeout(() => {
+      rd.currentQ++;
+      if (rd.currentQ >= rd.questions.length) {
+        // Finished!
+        rd.finished = true;
+        rd.finishTime = Date.now();
+        saveTeamProgress();
+        showWaiting('ROUND COMPLETE!', `You completed all ${rd.questions.length} questions! Awaiting results.`);
+      } else {
+        saveTeamProgress();
+        renderQuestion();
+      }
+    }, 800);
+  } else {
+    inp.classList.remove('correct');
+    inp.classList.add('wrong');
+    feedback.textContent = '✗ INCORRECT. Try again.';
+    feedback.className = 'answer-feedback wrong';
+    rd.wrongStreak++;
+
+    // Show hint after 3 wrong
+    if (rd.wrongStreak >= 3 && q.hint && !rd.hintShown) {
+      rd.hintShown = true;
+      document.getElementById('hint-text').textContent = q.hint;
+      document.getElementById('hint-box').classList.add('visible');
+    }
+
+    document.getElementById('attempts-num').textContent = rd.totalAttempts;
+    document.getElementById('streak-num').textContent = rd.wrongStreak;
+
+    setTimeout(() => {
+      inp.classList.remove('wrong');
+      inp.value = '';
+    }, 600);
+  }
+}
+
+function checkAnswer(raw, correct, exact) {
+  if (exact) {
+    return raw.trim() === correct.trim();
+  }
+  // Case-insensitive, collapse whitespace
+  const normalize = s => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  return normalize(raw) === normalize(correct);
+}
+
+function updateTimerDisplay() {
+  if (!STATE.roundEnd) return;
+  const remaining = Math.max(0, STATE.roundEnd - Date.now());
+  const timeStr = formatMs(remaining);
+  const el = document.getElementById('game-timer');
+  if (el) {
+    el.textContent = timeStr;
+    if (remaining < 300000) el.classList.add('danger');
+    else el.classList.remove('danger');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LEADERBOARD
+// ═══════════════════════════════════════════════════════════════
+function getSortedLeaderboard(rk) {
+  return Object.keys(STATE.teams)
+    .filter(n => STATE.teams[n][rk])
+    .map(n => {
+      const rd = STATE.teams[n][rk];
+      const elapsed = rd.finishTime
+        ? rd.finishTime - rd.startTime
+        : Date.now() - (rd.startTime || Date.now());
+      return {
+        name: n,
+        q: rd.currentQ,
+        total: rd.questions?.length || 15,
+        finished: rd.finished,
+        elapsed,
+        attempts: rd.totalAttempts || 0,
+        tabViolations: STATE.teams[n].tabViolations || 0
+      };
+    })
+    .sort((a, b) => {
+      if (a.finished && !b.finished) return -1;
+      if (!a.finished && b.finished) return 1;
+      if (a.q !== b.q) return b.q - a.q;
+      return a.elapsed - b.elapsed;
+    });
+}
+
+function renderSidebarLB() {
+  const rk = getRoundKey();
+  const sorted = getSortedLeaderboard(rk);
+  const el = document.getElementById('sidebar-lb');
+  if (!el) return;
+
+  el.innerHTML = sorted.map((item, i) => {
+    const me = item.name === STATE.currentTeam;
+    const pct = Math.round((item.q / item.total) * 100);
+    return `
+      <div class="sidebar-lb-row ${me ? 'my-team' : ''}" style="--prog:${pct}%">
+        <div class="slb-rank-name">
+          <div class="slb-rank">#${i+1}</div>
+          <div class="slb-name">${item.name} ${me ? '<span class="my-team-badge">YOU</span>' : ''}</div>
+          <div class="slb-q">${item.finished ? '✓ DONE' : `Q${item.q + 1}/${item.total}`}</div>
+        </div>
+        <div style="height:2px;background:var(--border);margin-top:4px;">
+          <div style="height:100%;width:${pct}%;background:${me ? 'var(--accent)' : 'var(--border)'};transition:width 0.5s;box-shadow:${me ? '0 0 6px var(--accent)' : 'none'};"></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderAdminLB() {
+  const phase = STATE.phase;
+  const rk = phase === 'r2' || phase === 'r2-end' ? 'r2' : phase === 'tb' ? 'tb' : 'r1';
+  const sorted = getSortedLeaderboard(rk);
+  const el = document.getElementById('admin-lb');
+  if (!el) return;
+
+  el.innerHTML = sorted.map((item, i) => `
+    <div class="lb-row rank-${Math.min(i+1,3)}">
+      <div class="lb-rank">#${i+1}</div>
+      <div>
+        <div class="lb-name">${item.name}</div>
+        <div style="height:3px;background:var(--border);margin-top:4px;width:200px;">
+          <div style="height:100%;width:${Math.round(item.q/item.total*100)}%;background:var(--accent);transition:width 0.5s;"></div>
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div class="lb-progress">${item.finished ? '✓ DONE' : `Q${item.q+1}/${item.total}`}</div>
+        <div style="color:var(--text-dim);font-size:0.7rem;margin-top:2px;">${item.attempts} attempt${item.attempts !== 1 ? 's' : ''}</div>
+      </div>
+      <div class="lb-time">${formatTime(item.elapsed)}</div>
+      <div style="text-align:center;min-width:60px;">
+        <div style="font-family:'Orbitron',monospace;font-size:0.7rem;color:${item.tabViolations > 0 ? 'var(--danger)' : 'var(--text-dim)'}">${item.tabViolations}</div>
+        <div style="color:var(--text-dim);font-size:0.65rem;">TAB SWITCH${item.tabViolations !== 1 ? 'ES' : ''}</div>
+      </div>
+    </div>`).join('') || '<div style="color:var(--text-dim);font-size:0.85rem;padding:12px;">No active teams.</div>';
+}
+
+function startLeaderboardRefresh() {
+  clearInterval(STATE.leaderboardInterval);
+  // Firebase onValue handles live state updates; this interval only drives
+  // the countdown timer display and periodic UI refresh.
+  STATE.leaderboardInterval = setInterval(() => {
+    updateTimerDisplay();
+    renderSidebarLB();
+    if (STATE.isAdmin) { renderAdminLB(); renderTeamList(); renderOverrides(); }
+    if (document.getElementById('waiting').classList.contains('active')) renderWaitingLeaderboard();
+  }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FINAL RESULTS
+// ═══════════════════════════════════════════════════════════════
+function getFinalRankings() {
+  // Determine which round was the last
+  const phase = STATE.phase;
+  let rk = 'r1';
+  if (phase === 'finished' || phase === 'r2-end') {
+    // check if tb happened
+    const hasTB = Object.values(STATE.teams).some(t => t.tb);
+    rk = hasTB ? 'tb' : 'r2';
+    if (!Object.values(STATE.teams).some(t => t[rk])) rk = 'r1';
+  }
+
+  return Object.keys(STATE.teams)
+    .filter(n => {
+      const t = STATE.teams[n];
+      return t.r2Enabled || t.tbEnabled;
+    })
+    .map(n => {
+      const t = STATE.teams[n];
+      const rd = t[rk] || t.r2 || t.r1;
+      const elapsed = rd?.finishTime
+        ? rd.finishTime - rd.startTime
+        : rd ? Date.now() - rd.startTime : 0;
+      const roundsDone = [t.r1?.finished, t.r2?.finished, t.tb?.finished].filter(Boolean).length;
+      return { name: n, elapsed, roundsDone, finished: rd?.finished || false, q: rd?.currentQ || 0 };
+    })
+    .sort((a, b) => {
+      if (a.finished && !b.finished) return -1;
+      if (!a.finished && b.finished) return 1;
+      if (a.q !== b.q) return b.q - a.q;
+      return a.elapsed - b.elapsed;
+    });
+}
+
+function showTeamResults() {
+  showScreen('results');
+  const rankings = getFinalRankings();
+  const podium = document.getElementById('podium');
+  const tbody = document.getElementById('results-tbody');
+
+  podium.innerHTML = '';
+  if (rankings[0]) {
+    podium.innerHTML += `
+      <div class="podium-item">
+        <div class="podium-block podium-2">
+          <div class="podium-label">2ND PLACE</div>
+          <div>${rankings[1]?.name || '—'}</div>
+        </div>
+        <div class="podium-name">${rankings[1]?.name || ''}</div>
+      </div>
+      <div class="podium-item">
+        <div class="podium-block podium-1">
+          <div class="podium-label">🏆 1ST PLACE</div>
+          <div>${rankings[0].name}</div>
+        </div>
+        <div class="podium-name">${rankings[0].name}</div>
+      </div>`;
+  }
+
+  tbody.innerHTML = rankings.map((r, i) => `
+    <tr>
+      <td>${i === 0 ? '🥇' : i === 1 ? '🥈' : `#${i+1}`}</td>
+      <td>${r.name}</td>
+      <td>${r.roundsDone}</td>
+      <td>${formatTime(r.elapsed)}</td>
+    </tr>`).join('');
+}
+
+function renderFinalResultsAdmin() {
+  const rankings = getFinalRankings();
+  const el = document.getElementById('final-results-admin');
+  el.innerHTML = rankings.map((r, i) => `
+    <div class="lb-row rank-${Math.min(i+1,3)}" style="margin-bottom:8px;">
+      <div class="lb-rank">${i===0?'🥇':i===1?'🥈':'#'+(i+1)}</div>
+      <div class="lb-name">${r.name}</div>
+      <div class="lb-progress">${r.roundsDone} rounds</div>
+      <div class="lb-time">${formatTime(r.elapsed)}</div>
+    </div>`).join('') || '<div style="color:var(--text-dim);">No results yet.</div>';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PDF EXPORT
+// ═══════════════════════════════════════════════════════════════
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const rankings = getFinalRankings();
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(22);
+  doc.setTextColor(0, 150, 200);
+  doc.text('DEBUG QUEST — TREASURE HUNT', 14, 22);
+  doc.text('FINAL RESULTS', 14, 32);
+
+  doc.setFontSize(10);
+  doc.setTextColor(100, 100, 100);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 42);
+
+  doc.setDrawColor(0, 180, 220);
+  doc.line(14, 46, 196, 46);
+
+  // Winners
+  doc.setFontSize(14);
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'bold');
+  doc.text('PRIZE WINNERS', 14, 56);
+
+  if (rankings[0]) {
+    doc.setFontSize(12);
+    doc.setTextColor(200, 150, 0);
+    doc.text(`🥇 FIRST PRIZE: ${rankings[0].name}`, 14, 68);
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`   Rounds Completed: ${rankings[0].roundsDone}`, 14, 76);
+    doc.text(`   Total Time: ${formatTime(rankings[0].elapsed)}`, 14, 83);
+  }
+  if (rankings[1]) {
+    doc.setFontSize(12);
+    doc.setTextColor(150, 150, 150);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`🥈 SECOND PRIZE: ${rankings[1].name}`, 14, 96);
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`   Rounds Completed: ${rankings[1].roundsDone}`, 14, 104);
+    doc.text(`   Total Time: ${formatTime(rankings[1].elapsed)}`, 14, 111);
+  }
+
+  doc.setDrawColor(200, 200, 200);
+  doc.line(14, 120, 196, 120);
+
+  // Full table
+  doc.setFontSize(13);
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'bold');
+  doc.text('ALL TEAMS — FULL STANDINGS', 14, 132);
+
+  const headers = ['RANK', 'TEAM NAME', 'ROUNDS COMPLETED', 'TOTAL TIME'];
+  const rows = rankings.map((r, i) => [
+    i === 0 ? '1st' : i === 1 ? '2nd' : `#${i+1}`,
+    r.name,
+    `${r.roundsDone}`,
+    formatTime(r.elapsed)
+  ]);
+
+  let y = 144;
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  headers.forEach((h, i) => doc.text(h, 14 + i * 46, y));
+  y += 2;
+  doc.setDrawColor(200, 200, 200);
+  doc.line(14, y, 196, y);
+  y += 6;
+
+  rows.forEach((row, ri) => {
+    doc.setTextColor(ri < 2 ? 0 : 80);
+    doc.setFont('helvetica', ri < 2 ? 'bold' : 'normal');
+    row.forEach((cell, ci) => doc.text(String(cell), 14 + ci * 46, y));
+    y += 8;
+  });
+
+  doc.save('debug-quest-results.pdf');
+  notify('PDF downloaded!', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANTI-CHEAT
+// ═══════════════════════════════════════════════════════════════
+let tabViolations = 0;
+let penaltyInterval = null;
+const TAB_PENALTY_SECS = 30;
+
+function setupAntiCheat() {
+  // No right-click
+  document.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
+
+  // Tab visibility
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && document.getElementById('game').classList.contains('active')) {
+      tabViolations++;
+      // Persist violation count to Firebase so admin can see it
+      if (db && STATE.currentTeam) {
+        db.ref('gameState/teams/' + STATE.currentTeam + '/tabViolations').set(tabViolations);
+      }
+    } else if (!document.hidden && document.getElementById('game').classList.contains('active') && tabViolations > 0) {
+      startPenalty();
+    }
+  });
+
+  // Keyboard shortcuts disabled
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && ['c','v','u','s','p','a'].includes(e.key.toLowerCase())) {
+      e.preventDefault(); // block everywhere, including answer input
+    }
+    if (e.key === 'F12') e.preventDefault();
+    if (e.ctrlKey && e.shiftKey && ['i','j','c'].includes(e.key.toLowerCase())) e.preventDefault();
+  });
+
+  // Block copy, cut, paste events entirely
+  document.addEventListener('copy',  e => e.preventDefault());
+  document.addEventListener('cut',   e => e.preventDefault());
+  document.addEventListener('paste', e => e.preventDefault());
+}
+
+function startPenalty(secondsOverride) {
+  const remaining_init = secondsOverride ?? TAB_PENALTY_SECS;
+
+  // Save penalty end time to Firebase so it survives a page reload
+  const penaltyUntil = Date.now() + remaining_init * 1000;
+  if (db && STATE.currentTeam) {
+    db.ref('gameState/teams/' + STATE.currentTeam + '/penaltyUntil').set(penaltyUntil);
+  }
+
+  // Lock the answer input
+  const input = document.getElementById('answer-input');
+  const submitBtn = document.querySelector('#game .btn.success');
+  if (input) input.disabled = true;
+  if (submitBtn) submitBtn.disabled = true;
+
+  // Show overlay with countdown
+  const penaltyMsg = document.getElementById('tab-penalty-msg');
+  const dismissBtn = document.getElementById('tab-dismiss-btn');
+  document.getElementById('tab-warning').classList.add('show');
+  if (dismissBtn) dismissBtn.style.display = 'none';
+
+  let remaining = remaining_init;
+  const update = () => {
+    if (penaltyMsg) penaltyMsg.textContent = `PENALTY: ${remaining}s remaining — answer input locked`;
+  };
+  update();
+
+  clearInterval(penaltyInterval);
+  penaltyInterval = setInterval(() => {
+    remaining--;
+    update();
+    if (remaining <= 0) {
+      clearInterval(penaltyInterval);
+      penaltyInterval = null;
+      // Clear penalty from Firebase
+      if (db && STATE.currentTeam) {
+        db.ref('gameState/teams/' + STATE.currentTeam + '/penaltyUntil').remove();
+      }
+      // Unlock input
+      if (input) input.disabled = false;
+      if (submitBtn) submitBtn.disabled = false;
+      if (penaltyMsg) penaltyMsg.textContent = '';
+      if (dismissBtn) dismissBtn.style.display = 'inline-block';
+    }
+  }, 1000);
+}
+
+function dismissTabWarning() {
+  if (penaltyInterval) return; // still counting down — button is hidden anyway
+  document.getElementById('tab-warning').classList.remove('show');
+  notify(`Warning! Tab switching detected (${tabViolations}x). Stay on this page.`, 'error');
+}
+
+// Block right-click globally
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+// Block copy/paste/cut globally from page load
+document.addEventListener('copy',  e => e.preventDefault());
+document.addEventListener('cut',   e => e.preventDefault());
+document.addEventListener('paste', e => e.preventDefault());
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && ['c','v','u','s','p','a','x'].includes(e.key.toLowerCase())) e.preventDefault();
+  if (e.key === 'F12') e.preventDefault();
+  // Block refresh: F5, Ctrl+R, Ctrl+Shift+R
+  if (e.key === 'F5') e.preventDefault();
+  if (e.ctrlKey && e.key.toLowerCase() === 'r') e.preventDefault();
+  if (e.ctrlKey && e.shiftKey && ['i','j','c','r'].includes(e.key.toLowerCase())) e.preventDefault();
+});
+
+// Warn before page unload/refresh (works as a last line of defense)
+window.addEventListener('beforeunload', e => {
+  if (STATE.currentTeam && !STATE.isAdmin) {
+    e.preventDefault();
+    e.returnValue = ''; // triggers browser's built-in "Leave site?" dialog
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN UI REFRESH
+// ═══════════════════════════════════════════════════════════════
+function refreshAdminUI() {
+  renderTeamList();
+  renderAdvanceChecks();
+  renderAdvanceChecksTB();
+  renderOverrides();
+  renderAdminLB();
+  renderFinalResultsAdmin();
+  updateQCounts();
+  const nameInput = document.getElementById('event-name-input');
+  if (nameInput) nameInput.value = STATE.eventName || 'Debug Quest';
+}
+
+function updateQCounts() {
+  document.getElementById('r1-count').textContent = `${STATE.qBanks.r1.length} QUESTIONS`;
+  document.getElementById('r2-count').textContent = `${STATE.qBanks.r2.length} QUESTIONS`;
+  document.getElementById('tb-count').textContent = `${STATE.qBanks.tb.length} QUESTIONS`;
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.remove('active');
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`[onclick="switchTab('${tab}')"]`).classList.add('active');
+  document.getElementById(`tab-${tab}`).classList.add('active');
+
+  if (tab === 'leaderboard') renderAdminLB();
+  if (tab === 'results') renderFinalResultsAdmin();
+  if (tab === 'teams') renderTeamList();
+  if (tab === 'control') { renderAdvanceChecks(); renderAdvanceChecksTB(); renderOverrides(); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════
+function shufflePick(arr, n) {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
+
+function formatMs(ms) {
+  const totalSecs = Math.floor(ms / 1000);
+  const m = Math.floor(totalSecs / 60).toString().padStart(2, '0');
+  const s = (totalSecs % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function formatTime(ms) {
+  if (!ms) return '—';
+  const totalSecs = Math.floor(ms / 1000);
+  const m = Math.floor(totalSecs / 60);
+  const s = totalSecs % 60;
+  return `${m}m ${s}s`;
+}
+
+function notify(msg, type = 'info') {
+  const container = document.getElementById('notif-container');
+  const el = document.createElement('div');
+  el.className = `notif ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
+
+// Init
+function init() {
+  if (!initFirebase()) {
+    // Show a clear setup prompt if Firebase config is not filled in
+    document.body.insertAdjacentHTML('beforeend', `
+      <div style="position:fixed;inset:0;background:#0a0e1a;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;font-family:'Share Tech Mono',monospace;padding:40px;text-align:center;">
+        <div style="font-family:'Orbitron',monospace;font-size:1.4rem;color:#ff3b5c;letter-spacing:3px;">&#9888; FIREBASE NOT CONFIGURED</div>
+        <div style="color:#6b7fa3;max-width:560px;line-height:1.9;font-size:0.9rem;">
+          Open <strong style="color:#00d4ff;">dth.html</strong> in a text editor and fill in the
+          <strong style="color:#00d4ff;">FIREBASE_CONFIG</strong> near the top of the &lt;script&gt; section.<br><br>
+          <strong style="color:#39ff14;">Quick steps:</strong><br>
+          1. Go to <strong>console.firebase.google.com</strong> and create a project.<br>
+          2. Add a Web App &mdash; copy the config values.<br>
+          3. Go to <strong>Build &rarr; Realtime Database &rarr; Create database</strong>.<br>
+          4. Choose <strong>"Start in test mode"</strong> (allows all reads &amp; writes).<br>
+          5. Paste the config into FIREBASE_CONFIG in dth.html and reload.
+        </div>
+      </div>`);
+    return;
+  }
+
+  // Load current state from Firebase once, then set up real-time listener
+  db.ref('gameState').once('value', snapshot => {
+    const data = snapshot.val();
+    if (data) {
+      STATE.phase      = data.phase      ?? 'pre';
+      STATE.roundStart = data.roundStart ?? null;
+      STATE.roundEnd   = data.roundEnd   ?? null;
+      STATE.teams      = data.teams      ?? {};
+      const qb = data.qBanks ?? {};
+      STATE.qBanks = {
+        r1: Array.isArray(qb.r1) ? qb.r1 : [],
+        r2: Array.isArray(qb.r2) ? qb.r2 : [],
+        tb: Array.isArray(qb.tb) ? qb.tb : [],
+      };
+    } else {
+      // First-ever run: seed default teams
+      const defaultTeams = [
+        { name: 'Team Alpha',   pass: 'alpha1'   },
+        { name: 'Team Beta',    pass: 'beta2'    },
+        { name: 'Team Gamma',   pass: 'gamma3'   },
+        { name: 'Team Delta',   pass: 'delta4'   },
+        { name: 'Team Epsilon', pass: 'epsilon5' },
+      ];
+      defaultTeams.forEach(t => {
+        STATE.teams[t.name] = { password: t.pass, r1Enabled: true, r2Enabled: false, tbEnabled: false };
+      });
+      saveState();
+    }
+    setupRealtimeSync();
+    refreshAdminUI();
+  }).catch(e => {
+    console.error('Firebase read error:', e);
+    alert('Could not connect to Firebase. Check your FIREBASE_CONFIG values and make sure Realtime Database is enabled in test mode.');
+  });
+}
+
+init();
+</script>
+</body>
+</html>
