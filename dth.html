@@ -1198,21 +1198,28 @@ function saveEventName() {
   const input = document.getElementById('event-name-input');
   STATE.eventName = (input ? input.value.trim() : '') || 'Debug Quest';
   updateEventName();
-  saveState();
+  saveState({ includeTeams: false, includeQBanks: false });
   notify('Event name updated.', 'success');
 }
 
-// Write the full game state to Firebase (admin operations)
-function saveState() {
+// Write game state to Firebase with targeted updates to reduce overwrite races.
+function saveState(options = {}) {
+  const {
+    includeTeams = true,
+    includeQBanks = true,
+  } = options;
+
   if (!db) return;
-  db.ref('gameState').set({
+  const payload = {
     phase:      STATE.phase,
     roundStart: STATE.roundStart,
     roundEnd:   STATE.roundEnd,
-    teams:      STATE.teams,
-    qBanks:     STATE.qBanks,
     eventName:  STATE.eventName
-  }).then(() => {
+  };
+  if (includeTeams) payload.teams = STATE.teams;
+  if (includeQBanks) payload.qBanks = STATE.qBanks;
+
+  db.ref('gameState').update(payload).then(() => {
     console.log('State saved.');
   }).catch(e => {
     console.error('Firebase write error:', e);
@@ -1453,7 +1460,7 @@ function addTeam() {
   document.getElementById('new-team-name').value = '';
   document.getElementById('new-team-pass').value = '';
   notify(`Team "${name}" added.`, 'success');
-  saveState();
+  saveState({ includeQBanks: false });
   renderTeamList();
   renderAdvanceChecks();
   renderOverrides();
@@ -1462,7 +1469,7 @@ function addTeam() {
 function removeTeam(name) {
   if (!confirm(`Remove team "${name}"?`)) return;
   delete STATE.teams[name];
-  saveState();
+  saveState({ includeQBanks: false });
   renderTeamList();
   renderAdvanceChecks();
   renderOverrides();
@@ -1503,7 +1510,7 @@ function saveQuestionBank(bank) {
     const arr = JSON.parse(el.value.trim());
     if (!Array.isArray(arr)) throw new Error('Not an array');
     STATE.qBanks[bank] = arr;
-    saveState();
+    saveState({ includeTeams: false });
     notify(`${bank.toUpperCase()} bank saved: ${arr.length} questions.`, 'success');
     document.getElementById(`${bank}-count`).textContent = `${arr.length} QUESTIONS`;
   } catch(e) {
@@ -1629,7 +1636,7 @@ function startRound(round) {
   document.getElementById('ctrl-phase').textContent = `ROUND ${round} ACTIVE`;
   document.getElementById('admin-round-badge').textContent = `ROUND ${round}`;
 
-  saveState();
+  saveState({ includeQBanks: false });
   startAdminTimer();
   refreshAdminUI();
   notify(`Round ${round} started!`, 'success');
@@ -1653,7 +1660,7 @@ function endRound(round) {
     renderAdvanceChecksTB();
   }
 
-  saveState();
+  saveState({ includeTeams: false, includeQBanks: false });
   notify(`Round ${round} ended. Select teams to advance.`, 'warning');
   if (STATE.currentTeam) routeTeam();
 }
@@ -1683,7 +1690,7 @@ function startTiebreaker() {
   document.getElementById('btn-start-tb').disabled = true;
   document.getElementById('btn-end-tb').disabled = false;
   document.getElementById('ctrl-phase').textContent = 'TIE-BREAKER ACTIVE';
-  saveState();
+  saveState({ includeQBanks: false });
   startAdminTimer();
   refreshAdminUI();
   notify('Tie-breaker started!', 'success');
@@ -1695,14 +1702,14 @@ function endTiebreaker() {
   clearInterval(STATE.timerInterval);
   document.getElementById('btn-end-tb').disabled = true;
   document.getElementById('btn-show-results').disabled = false;
-  saveState();
+  saveState({ includeTeams: false, includeQBanks: false });
   notify('Tie-breaker ended!', 'warning');
   if (STATE.currentTeam) routeTeam();
 }
 
 function showFinalResults() {
   STATE.phase = 'finished';
-  saveState();
+  saveState({ includeTeams: false, includeQBanks: false });
   renderFinalResultsAdmin();
   notify('Final results announced!', 'success');
   if (STATE.currentTeam) showTeamResults();
@@ -1739,7 +1746,7 @@ function resetEvent() {
   document.getElementById('ctrl-timer').textContent = '--:--';
   document.getElementById('admin-round-badge').textContent = 'PRE-EVENT';
 
-  saveState();
+  saveState({ includeQBanks: false });
   refreshAdminUI();
   notify('Event has been reset. All team progress cleared.', 'warning');
 }
@@ -1797,7 +1804,7 @@ function renderAdvanceChecksTB() {
 function toggleAdvance(round, teamName, checked) {
   if (round === 'r2') STATE.teams[teamName].r2Enabled = checked;
   if (round === 'tb') STATE.teams[teamName].tbEnabled = checked;
-  saveState();
+  saveState({ includeQBanks: false });
 }
 
 function renderOverrides() {
@@ -1834,7 +1841,7 @@ function unlockTeam(name) {
   team[rk].currentQ = next;
   team[rk].wrongStreak = 0;
   team[rk].hintShown = false;
-  saveState();
+  saveState({ includeQBanks: false });
   notify(`${name} advanced to Q${next + 1}.`, 'success');
 }
 
@@ -1862,6 +1869,7 @@ function startGameForTeam(rk) {
   // Resume any active penalty from before a reload
   // Uses penaltySecsRemaining (a static count) so time spent logging in doesn't consume penalty time
   const team = STATE.teams[STATE.currentTeam];
+  tabViolations = Number(team?.tabViolations || 0);
   if (team && team.penaltySecsRemaining) {
     const secsLeft = team.penaltySecsRemaining;
     if (secsLeft > 0) {
@@ -2121,7 +2129,7 @@ function getFinalRankings() {
   return Object.keys(STATE.teams)
     .filter(n => {
       const t = STATE.teams[n];
-      return t.r2Enabled || t.tbEnabled;
+      return t.r1Enabled || t.r2Enabled || t.tbEnabled || t.r1 || t.r2 || t.tb;
     })
     .map(n => {
       const t = STATE.teams[n];
@@ -2279,19 +2287,34 @@ function exportPDF() {
 let tabViolations = 0;
 let penaltyInterval = null;
 const TAB_PENALTY_SECS = 30;
+let antiCheatInitialized = false;
+
+function incrementTabViolations() {
+  if (!STATE.currentTeam) return;
+
+  if (db) {
+    const ref = db.ref('gameState/teams/' + STATE.currentTeam + '/tabViolations');
+    ref.transaction(curr => (curr || 0) + 1, (error, committed, snapshot) => {
+      if (!error && committed) {
+        tabViolations = Number(snapshot?.val() || 0);
+      }
+    });
+  } else {
+    tabViolations++;
+  }
+}
 
 function setupAntiCheat() {
+  if (antiCheatInitialized) return;
+  antiCheatInitialized = true;
+
   // No right-click
   document.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
 
   // Tab visibility
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && document.getElementById('game').classList.contains('active')) {
-      tabViolations++;
-      // Persist violation count to Firebase so admin can see it
-      if (db && STATE.currentTeam) {
-        db.ref('gameState/teams/' + STATE.currentTeam + '/tabViolations').set(tabViolations);
-      }
+      incrementTabViolations();
     } else if (!document.hidden && document.getElementById('game').classList.contains('active') && tabViolations > 0) {
       startPenalty();
     }
