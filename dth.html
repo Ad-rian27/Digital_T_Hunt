@@ -2666,6 +2666,37 @@ function refreshAdminUI() {
   updateQCounts();
   const nameInput = document.getElementById('event-name-input');
   if (nameInput) nameInput.value = STATE.eventName || 'Debug Quest';
+
+  // Restore admin control button states from the current phase.
+  // Without this, a page reload resets all buttons to their HTML defaults.
+  const phase = STATE.phase;
+  const r1Active   = phase === 'r1';
+  const r1Ended    = ['r1-end','r2','r2-end','tb','finished'].includes(phase);
+  const r2Active   = phase === 'r2';
+  const r2Ended    = ['r2-end','tb','finished'].includes(phase);
+  const tbActive   = phase === 'tb';
+  const isFinished = phase === 'finished';
+
+  const s = id => document.getElementById(id);
+  if (s('btn-start-r1')) s('btn-start-r1').disabled = phase !== 'pre';
+  if (s('btn-end-r1'))   s('btn-end-r1').disabled   = !r1Active;
+  if (s('btn-start-r2')) s('btn-start-r2').disabled  = phase !== 'r1-end';
+  if (s('btn-end-r2'))   s('btn-end-r2').disabled    = !r2Active;
+  if (s('btn-start-tb')) s('btn-start-tb').disabled  = phase !== 'r2-end';
+  if (s('btn-end-tb'))   s('btn-end-tb').disabled    = !tbActive;
+  if (s('btn-show-results')) s('btn-show-results').disabled = !['r2-end','tb','finished'].includes(phase);
+
+  const phaseLabels = { pre: 'PRE-EVENT', r1: 'ROUND 1 ACTIVE', 'r1-end': 'ROUND 1 ENDED', r2: 'ROUND 2 ACTIVE', 'r2-end': 'ROUND 2 ENDED', tb: 'TIE-BREAKER ACTIVE', finished: 'FINISHED' };
+  if (s('ctrl-phase'))       s('ctrl-phase').textContent = phaseLabels[phase] || phase.toUpperCase();
+  if (s('admin-round-badge')) {
+    const badgeLabels = { pre: 'PRE-EVENT', r1: 'ROUND 1', 'r1-end': 'ROUND 1', r2: 'ROUND 2', 'r2-end': 'ROUND 2', tb: 'TIE-BREAKER', finished: 'FINISHED' };
+    s('admin-round-badge').textContent = badgeLabels[phase] || 'PRE-EVENT';
+  }
+
+  // Restart admin timer if a round is in progress
+  if ((r1Active || r2Active || tbActive) && STATE.roundEnd) {
+    startAdminTimer();
+  }
 }
 
 function updateQCounts() {
