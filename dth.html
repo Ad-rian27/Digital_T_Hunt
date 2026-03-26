@@ -2129,17 +2129,22 @@ function submitAnswer() {
     inp.classList.add('correct');
     feedback.textContent = '✓ CORRECT! Moving to next question...';
     feedback.className = 'answer-feedback correct';
-    rd.wrongStreak = 0;
-    rd.hintShown = false;
 
     setTimeout(() => {
-      rd.currentQ++;
-      if (rd.currentQ >= rd.questions.length) {
+      // Re-read from live STATE.teams in case a Firebase sync replaced the object
+      // during the 800ms delay (race condition: stale rd reference).
+      const liveTeam = STATE.teams[STATE.currentTeam];
+      const liveRd = liveTeam ? liveTeam[rk] : null;
+      if (!liveRd) return;
+      liveRd.wrongStreak = 0;
+      liveRd.hintShown = false;
+      liveRd.currentQ++;
+      if (liveRd.currentQ >= liveRd.questions.length) {
         // Finished!
-        rd.finished = true;
-        rd.finishTime = Date.now();
+        liveRd.finished = true;
+        liveRd.finishTime = Date.now();
         saveTeamProgress();
-        showWaiting('ROUND COMPLETE!', `You completed all ${rd.questions.length} questions! Awaiting results.`);
+        showWaiting('ROUND COMPLETE!', `You completed all ${liveRd.questions.length} questions! Awaiting results.`);
       } else {
         saveTeamProgress();
         renderQuestion();
