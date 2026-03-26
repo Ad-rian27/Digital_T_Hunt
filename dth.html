@@ -951,6 +951,7 @@
           <button class="btn success" onclick="submitAnswer()">SUBMIT ANSWER</button>
           <button class="btn orange" id="skip-btn" onclick="skipQuestion()" style="font-size:0.7rem;">CHANGE QUESTION (0/3 used)</button>
         </div>
+        <div id="skip-penalty-display" style="display:none;margin-top:8px;font-family:'Orbitron',monospace;font-size:0.72rem;color:var(--danger);"></div>
       </div>
     </div>
 
@@ -1902,6 +1903,9 @@ function startGameForTeam(rk) {
   renderQuestion();
   updateTimerDisplay();
   startLeaderboardRefresh();
+  // Show skip penalty if any was accumulated before a reload
+  const teamForSkip = STATE.teams[STATE.currentTeam];
+  if (teamForSkip) updateSkipPenaltyDisplay(teamForSkip[rk]);
 
   // Resume any active penalty from before a reload
   // Uses penaltySecsRemaining (a static count) so time spent logging in doesn't consume penalty time
@@ -1974,9 +1978,21 @@ function renderQuestion() {
   const skipBtn = document.getElementById('skip-btn');
   if (skipBtn) {
     const skips = rd.skipCount || 0;
-    skipBtn.textContent = `CHANGE QUESTION (${skips}/3 used)`;
-    skipBtn.disabled = skips >= 3;
+    if (skips >= 3) {
+      skipBtn.textContent = 'CHANGE QUESTION — ALL 3 CHANCES USED';
+      skipBtn.disabled = true;
+      skipBtn.style.opacity = '0.45';
+      skipBtn.style.cursor = 'not-allowed';
+    } else {
+      skipBtn.textContent = `CHANGE QUESTION (${skips}/3 used)`;
+      skipBtn.disabled = false;
+      skipBtn.style.opacity = '';
+      skipBtn.style.cursor = '';
+    }
   }
+
+  // Update skip penalty display
+  updateSkipPenaltyDisplay(rd);
 }
 
 document.getElementById('answer-input').addEventListener('keydown', e => {
@@ -2072,9 +2088,10 @@ function getSortedLeaderboard(rk) {
     .filter(n => STATE.teams[n][rk])
     .map(n => {
       const rd = STATE.teams[n][rk];
-      const elapsed = rd.finishTime
+      const rawElapsed = rd.finishTime
         ? rd.finishTime - rd.startTime
         : Date.now() - (rd.startTime || Date.now());
+      const elapsed = rawElapsed + (rd.skipPenaltyMs || 0);
       return {
         name: n,
         q: rd.currentQ,
@@ -2359,16 +2376,27 @@ function skipQuestion() {
   const replacement = available[Math.floor(Math.random() * available.length)];
   rd.questions[rd.currentQ] = replacement;
   rd.skipCount = skipsUsed + 1;
+  rd.skipPenaltyMs = (rd.skipPenaltyMs || 0) + SKIP_PENALTY_MINS * 60 * 1000;
   rd.wrongStreak = 0;
   rd.hintShown = false;
 
-  // Deduct penalty time from round end
-  STATE.roundEnd = Math.max(Date.now() + 1000, STATE.roundEnd - SKIP_PENALTY_MINS * 60 * 1000);
-  if (db) db.ref('gameState/roundEnd').set(STATE.roundEnd);
-
+  // Save before any Firebase trigger can overwrite local STATE
   saveTeamProgress();
   renderQuestion();
-  notify(`Question changed! −2 min penalty applied. ${skipsLeft} skip(s) remaining.`, 'warning');
+  const skipsNowLeft = MAX_SKIPS - rd.skipCount;
+  notify(`Question changed! +${SKIP_PENALTY_MINS}min added to your score time. ${skipsNowLeft} change(s) remaining.`, 'warning');
+}
+
+function updateSkipPenaltyDisplay(rd) {
+  const el = document.getElementById('skip-penalty-display');
+  if (!el) return;
+  const totalMins = Math.round((rd?.skipPenaltyMs || 0) / 60000);
+  if (totalMins > 0) {
+    el.textContent = `⚠ +${totalMins} MIN SKIP PENALTY APPLIED TO YOUR SCORE`;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
