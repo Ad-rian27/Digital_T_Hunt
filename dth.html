@@ -2572,10 +2572,16 @@ function setupAntiCheat() {
     if (e.ctrlKey && e.shiftKey && ['i','j','c'].includes(e.key.toLowerCase())) e.preventDefault();
   });
 
-  // Block copy, cut, paste events entirely
-  document.addEventListener('copy',  e => e.preventDefault());
-  document.addEventListener('cut',   e => e.preventDefault());
-  document.addEventListener('paste', e => e.preventDefault());
+  // Block copy, cut, paste — but only for team participants, not admin or text inputs
+  const blockClipboard = e => {
+    if (STATE.isAdmin) return;
+    const tag = e.target?.tagName?.toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    e.preventDefault();
+  };
+  document.addEventListener('copy',  blockClipboard);
+  document.addEventListener('cut',   blockClipboard);
+  document.addEventListener('paste', blockClipboard);
 }
 
 function startPenalty(secondsOverride) {
@@ -2633,12 +2639,15 @@ function dismissTabWarning() {
 // Block right-click globally
 document.addEventListener('contextmenu', e => e.preventDefault());
 
-// Block copy/paste/cut globally from page load
-document.addEventListener('copy',  e => e.preventDefault());
-document.addEventListener('cut',   e => e.preventDefault());
-document.addEventListener('paste', e => e.preventDefault());
+// Block copy/paste/cut for team participants only (allow for admin and text inputs)
+document.addEventListener('copy',  e => { if (STATE.isAdmin) return; const t = e.target?.tagName?.toLowerCase(); if (t === 'input' || t === 'textarea') return; e.preventDefault(); });
+document.addEventListener('cut',   e => { if (STATE.isAdmin) return; const t = e.target?.tagName?.toLowerCase(); if (t === 'input' || t === 'textarea') return; e.preventDefault(); });
+document.addEventListener('paste', e => { if (STATE.isAdmin) return; const t = e.target?.tagName?.toLowerCase(); if (t === 'input' || t === 'textarea') return; e.preventDefault(); });
 document.addEventListener('keydown', e => {
-  if (e.ctrlKey && ['c','v','u','s','p','a','x'].includes(e.key.toLowerCase())) e.preventDefault();
+  // Allow Ctrl+C/V/X/A for admin or when focused on an input/textarea
+  const tag = e.target?.tagName?.toLowerCase();
+  const inField = tag === 'input' || tag === 'textarea';
+  if (e.ctrlKey && ['c','v','u','s','p','a','x'].includes(e.key.toLowerCase()) && !STATE.isAdmin && !inField) e.preventDefault();
   if (e.key === 'F12') e.preventDefault();
   // Block refresh: F5, Ctrl+R, Ctrl+Shift+R
   if (e.key === 'F5') e.preventDefault();
