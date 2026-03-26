@@ -1423,6 +1423,7 @@ function showWaiting(title, msg, type = 'waiting') {
 function renderWaitingLeaderboard() {
   const container = document.getElementById('waiting-leaderboard');
   const phase = STATE.phase;
+  if (phase === 'pre') { container.innerHTML = ''; return; }
   const roundKey = phase === 'r2' || phase === 'r2-end' ? 'r2' : phase === 'tb' ? 'tb' : 'r1';
   const sorted = getSortedLeaderboard(roundKey);
   if (!sorted.length) { container.innerHTML = ''; return; }
