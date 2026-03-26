@@ -2123,10 +2123,11 @@ function startGameForTeam(rk) {
   // Store questions in a Firebase-isolated cache so that real-time syncs can
   // never overwrite or empty the array during active gameplay.
   // Use toArray() in case Firebase returned a plain object instead of a real array.
+  // Deep-copy each question object so Firebase sync can never mutate the cache via shared references.
   const teamRound = STATE.teams[STATE.currentTeam]?.[rk];
   const aqArr = toArray(teamRound?.questions);
   if (aqArr.length > 0) {
-    STATE.activeQuestions[rk] = aqArr;
+    STATE.activeQuestions[rk] = aqArr.map(q => ({ ...q }));
   }
 
   renderQuestion();
@@ -2153,13 +2154,21 @@ function startGameForTeam(rk) {
   setupAntiCheat();
 }
 
+// Returns the cached question list for the given round key.
+// Uses a length-safe check so an empty [] cache (truthy!) doesn't mask the fallback.
+function getActiveQuestions(rk, fallbackRd) {
+  const cached = STATE.activeQuestions[rk];
+  if (cached && cached.length > 0) return cached;
+  return toArray(fallbackRd?.questions);
+}
+
 function renderQuestion() {
   const rk = getRoundKey();
   const team = STATE.teams[STATE.currentTeam];
   const rd = team[rk];
   // Use the Firebase-isolated question cache — never touches rd.questions
   // which can be emptied by real-time syncs.
-  const questions = STATE.activeQuestions[rk] || toArray(rd.questions);
+  const questions = getActiveQuestions(rk, rd);
   const q = questions[rd.currentQ];
   const total = questions.length;
 
@@ -2223,8 +2232,8 @@ function submitAnswer() {
   const rd = team[rk];
   if (rd.finished) return;
 
-  // Use Firebase-isolated question cache so answers are never undefined.
-  const questions = STATE.activeQuestions[rk] || toArray(rd.questions);
+  // Use length-safe cache helper so an empty [] never silently blocks the fallback.
+  const questions = getActiveQuestions(rk, rd);
   const q = questions[rd.currentQ];
   if (!q) {
     console.error('submitAnswer: no question at index', rd.currentQ, '— questions.length:', questions.length,
@@ -2252,17 +2261,21 @@ function submitAnswer() {
     feedback.textContent = '✓ CORRECT! Moving to next question...';
     feedback.className = 'answer-feedback correct';
 
+    // Capture nextQ BEFORE the 800ms delay so the increment is deterministic.
+    // Re-fetching liveRd inside the timeout and doing ++ is unsafe: Firebase sync
+    // can fire during the delay, replace STATE.teams[team][rk] with stale data
+    // (currentQ = N-1), and then ++ only brings it back to N instead of N+1.
+    const nextQ = rd.currentQ + 1;
+
     setTimeout(() => {
-      // Re-read from live STATE.teams in case a Firebase sync replaced the object
-      // during the 800ms delay (race condition: stale rd reference).
       const liveTeam = STATE.teams[STATE.currentTeam];
       const liveRd = liveTeam ? liveTeam[rk] : null;
       if (!liveRd) return;
-      const liveQuestions = STATE.activeQuestions[rk] || toArray(liveRd.questions);
+      const liveQuestions = getActiveQuestions(rk, liveRd);
       liveRd.wrongStreak = 0;
       liveRd.hintShown = false;
-      liveRd.currentQ++;
-      if (liveRd.currentQ >= liveQuestions.length) {
+      liveRd.currentQ = nextQ;  // assign known value — never rely on ++ over a live reference
+      if (nextQ >= liveQuestions.length) {
         // Finished!
         liveRd.finished = true;
         liveRd.finishTime = Date.now();
@@ -2329,10 +2342,13 @@ function getSortedLeaderboard(rk) {
       const elapsed = rd.finishTime
         ? rd.finishTime - rd.startTime
         : Date.now() - (rd.startTime || Date.now());
+      const qTotal = (n === STATE.currentTeam && STATE.activeQuestions[rk]?.length > 0)
+        ? STATE.activeQuestions[rk].length
+        : toArray(rd.questions).length || 15;
       return {
         name: n,
         q: rd.currentQ,
-        total: toArray(rd.questions).length || 15,
+        total: qTotal,
         finished: rd.finished,
         elapsed,
         attempts: rd.totalAttempts || 0,
