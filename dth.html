@@ -1506,10 +1506,15 @@ function doLogin() {
     };
 
     if (db) {
-      // Read only the teams node — much smaller and faster than the full gameState
-      db.ref('gameState/teams').once('value', snapshot => {
-        const teamsData = snapshot.val() ?? {};
+      // Read the full gameState to get both teams and the current phase.
+      // Reading only teams was causing routeTeam() to run with a stale/default phase.
+      db.ref('gameState').once('value', snapshot => {
+        const data = snapshot.val() ?? {};
+        const teamsData = data.teams ?? {};
         STATE.teams = teamsData;
+        STATE.phase = data.phase ?? 'pre';
+        STATE.roundStart = data.roundStart ?? null;
+        STATE.roundEnd = data.roundEnd ?? null;
         checkLogin(teamsData);
       }).catch(e => {
         console.error('Firebase team read error:', e);
