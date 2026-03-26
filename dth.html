@@ -1148,6 +1148,12 @@ const STATE = {
   isAdmin: false,
   eventName: 'Debug Quest',
 
+  // Isolated local copy of the active question list for the current team.
+  // Set once when the game starts; NEVER overwritten by Firebase syncs.
+  // This prevents Firebase's real-time listener from corrupting or emptying
+  // rd.questions mid-game and causing renderQuestion() to crash silently.
+  activeQuestions: {}, // { r1: [...], r2: [...], tb: [...] }
+
   // Per-team game state (stored in each team's record)
   // team.r1 = { questions: [], currentQ: 0, wrongStreak: 0, totalAttempts: 0, startTime, finishTime, hintShown: false }
 };
@@ -2066,6 +2072,14 @@ function startGameForTeam(rk) {
     rk === 'tb' ? 'TIE-BREAKER' : rk === 'r2' ? 'ROUND 2' : 'ROUND 1';
   document.getElementById('tb-indicator').style.display = rk === 'tb' ? 'block' : 'none';
 
+  // Store questions in a Firebase-isolated cache so that real-time syncs can
+  // never overwrite or empty the array during active gameplay.
+  // Only populate if not already set (prevents overwriting on re-route).
+  const teamRound = STATE.teams[STATE.currentTeam]?.[rk];
+  if (teamRound?.questions?.length) {
+    STATE.activeQuestions[rk] = teamRound.questions;
+  }
+
   renderQuestion();
   updateTimerDisplay();
   startLeaderboardRefresh();
@@ -2094,15 +2108,23 @@ function renderQuestion() {
   const rk = getRoundKey();
   const team = STATE.teams[STATE.currentTeam];
   const rd = team[rk];
-  const q = rd.questions[rd.currentQ];
-  const total = rd.questions.length;
+  // Use the Firebase-isolated question cache — never touches rd.questions
+  // which can be emptied by real-time syncs.
+  const questions = STATE.activeQuestions[rk] || rd.questions || [];
+  const q = questions[rd.currentQ];
+  const total = questions.length;
+
+  if (!q) {
+    console.error('renderQuestion: no question at index', rd.currentQ, 'in', rk);
+    return;
+  }
 
   // Meta
   document.getElementById('q-number').textContent = `QUESTION ${rd.currentQ + 1} / ${total}`;
 
   // Dots
   const dotsEl = document.getElementById('q-dots');
-  dotsEl.innerHTML = rd.questions.map((_, i) => {
+  dotsEl.innerHTML = questions.map((_, i) => {
     let cls = i < rd.currentQ ? 'done' : i === rd.currentQ ? 'current' : '';
     return `<div class="q-dot ${cls}"></div>`;
   }).join('');
@@ -2149,7 +2171,11 @@ function submitAnswer() {
   const rd = team[rk];
   if (rd.finished) return;
 
-  const q = rd.questions[rd.currentQ];
+  // Use Firebase-isolated question cache so answers are never undefined.
+  const questions = STATE.activeQuestions[rk] || rd.questions || [];
+  const q = questions[rd.currentQ];
+  if (!q) return; // Guard: should never happen, but prevents a crash if it does.
+
   const raw = document.getElementById('answer-input').value;
   const inp = document.getElementById('answer-input');
   const feedback = document.getElementById('answer-feedback');
@@ -2170,15 +2196,16 @@ function submitAnswer() {
       const liveTeam = STATE.teams[STATE.currentTeam];
       const liveRd = liveTeam ? liveTeam[rk] : null;
       if (!liveRd) return;
+      const liveQuestions = STATE.activeQuestions[rk] || liveRd.questions || [];
       liveRd.wrongStreak = 0;
       liveRd.hintShown = false;
       liveRd.currentQ++;
-      if (liveRd.currentQ >= liveRd.questions.length) {
+      if (liveRd.currentQ >= liveQuestions.length) {
         // Finished!
         liveRd.finished = true;
         liveRd.finishTime = Date.now();
         saveTeamProgress();
-        showWaiting('ROUND COMPLETE!', `You completed all ${liveRd.questions.length} questions! Awaiting results.`);
+        showWaiting('ROUND COMPLETE!', `You completed all ${liveQuestions.length} questions! Awaiting results.`);
       } else {
         saveTeamProgress();
         renderQuestion();
