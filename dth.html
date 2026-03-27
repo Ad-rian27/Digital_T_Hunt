@@ -2417,8 +2417,12 @@ function skipQuestion() {
 let tabViolations = 0;
 let penaltyInterval = null;
 const TAB_PENALTY_SECS = 30;
+let antiCheatInitialized = false;
 
 function setupAntiCheat() {
+  if (antiCheatInitialized) return; // Already set up — don't register duplicate listeners
+  antiCheatInitialized = true;
+
   // No right-click
   document.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
 
