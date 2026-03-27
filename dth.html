@@ -2200,34 +2200,45 @@ function startLeaderboardRefresh() {
 // FINAL RESULTS
 // ═══════════════════════════════════════════════════════════════
 function getFinalRankings() {
-  // Determine which round was the last
-  const phase = STATE.phase;
-  let rk = 'r1';
-  if (phase === 'finished' || phase === 'r2-end') {
-    // check if tb happened
-    const hasTB = Object.values(STATE.teams).some(t => t.tb);
-    rk = hasTB ? 'tb' : 'r2';
-    if (!Object.values(STATE.teams).some(t => t[rk])) rk = 'r1';
-  }
-
   return Object.keys(STATE.teams)
-    .filter(n => {
-      const t = STATE.teams[n];
-      return t.r2Enabled || t.tbEnabled;
-    })
     .map(n => {
       const t = STATE.teams[n];
-      const rd = t[rk] || t.r2 || t.r1;
-      const elapsed = rd?.finishTime
-        ? rd.finishTime - rd.startTime
-        : rd ? Date.now() - rd.startTime : 0;
+
+      // Count how many rounds the team actually finished
       const roundsDone = [t.r1?.finished, t.r2?.finished, t.tb?.finished].filter(Boolean).length;
-      return { name: n, elapsed, roundsDone, finished: rd?.finished || false, q: rd?.currentQ || 0 };
+
+      // Sum elapsed time only for rounds the team actually participated in
+      let elapsed = 0;
+      ['r1', 'r2', 'tb'].forEach(rk => {
+        const r = t[rk];
+        if (!r) return;
+        if (r.finishTime) {
+          elapsed += r.finishTime - r.startTime;
+        } else if (r.startTime) {
+          // Round started but not finished — use current time so unfinished teams sort last
+          elapsed += Date.now() - r.startTime;
+        }
+      });
+
+      // Best round data available for the q-progress sort fallback
+      const rd = t.tb || t.r2 || t.r1;
+      return {
+        name: n,
+        elapsed,
+        roundsDone,
+        finished: rd?.finished || false,
+        q: rd?.currentQ || 0
+      };
     })
     .sort((a, b) => {
+      // More rounds completed = higher rank
+      if (a.roundsDone !== b.roundsDone) return b.roundsDone - a.roundsDone;
+      // Among equal rounds: finished before unfinished
       if (a.finished && !b.finished) return -1;
       if (!a.finished && b.finished) return 1;
+      // Among equal: more questions answered = higher rank
       if (a.q !== b.q) return b.q - a.q;
+      // Final tiebreak: less total time = higher rank
       return a.elapsed - b.elapsed;
     });
 }
