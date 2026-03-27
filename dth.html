@@ -2238,8 +2238,10 @@ function getFinalRankings() {
       if (!a.finished && b.finished) return 1;
       // Among equal: more questions answered = higher rank
       if (a.q !== b.q) return b.q - a.q;
-      // Final tiebreak: less total time = higher rank
-      return a.elapsed - b.elapsed;
+      // Tiebreak: less total time = higher rank
+      if (a.elapsed !== b.elapsed) return a.elapsed - b.elapsed;
+      // Stable tiebreak: alphabetical by team name (ensures consistent ordering across all clients)
+      return a.name.localeCompare(b.name);
     });
 }
 
